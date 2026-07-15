@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Cap ClickHouse memory so it cannot OOM the box it shares with the
+         LiteLLM gateway and OS. ~3GB is ample for lab-scale trace volume.
+         Raise if trace volume ever grows and the box has headroom. -->
+    <max_server_memory_usage>3221225472</max_server_memory_usage>
+    <max_memory_usage>2147483648</max_memory_usage>
+</clickhouse>

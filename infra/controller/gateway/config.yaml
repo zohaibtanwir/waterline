@@ -1,0 +1,48 @@
+# LiteLLM gateway config — waterline controller
+# Deploy to: /opt/substrate/gateway/  on waterline-control
+# Holds the ONE real Anthropic key (via env). Sandboxes get virtual keys only.
+
+model_list:
+  # ---- Tier aliases: the "ministry of experts" routing table ----
+  # A task spec declares its tier; the gateway resolves tier -> model.
+  # Model IDs verified against Anthropic pricing docs (Jul 2026).
+  - model_name: plan            # hard reasoning / planning
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: execute         # routine implementation
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: verify          # checks / classification / cheap work
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # Claude Code inside a sandbox asks for specific model strings, not our
+  # aliases. Map the ones it uses so existing sandbox behaviour keeps working
+  # through the gateway. (Claude Code picks its own model; these are pass-through.)
+  - model_name: claude-opus-4-8
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-haiku-4-5-20251001
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+litellm_settings:
+  # Every model call is traced to the self-hosted Langfuse on this box.
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY   # admin key — mints virtual keys
+  database_url: os.environ/DATABASE_URL       # LiteLLM's own postgres (key store + spend)
+  # Virtual keys, budgets, and spend tracking require the DB-backed key store.
+  store_model_in_db: true

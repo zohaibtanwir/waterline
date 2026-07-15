@@ -1,0 +1,46 @@
+# LiteLLM gateway stack — waterline controller (tailnet + sandbox-net reachable)
+# Deploy to: /opt/substrate/gateway/  on waterline-control
+#
+# Port binding note: the gateway must be reachable from TWO places —
+#   1. your Mac over the tailnet (admin), and
+#   2. sandboxes on the runner, which arrive via the runner's tailnet path.
+# Both arrive on the tailnet interface, so binding to the tailnet IP covers both.
+# The runner-side iptables allow (sandbox-net -> controller:4000) is what lets
+# sandboxes reach it; the gateway itself just listens on the tailnet.
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    depends_on:
+      litellm-db: { condition: service_healthy }
+    ports:
+      - "100.98.245.52:4000:4000"        # admin + model endpoint over tailnet
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}         # the ONE real key (waterline-gateway)
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}       # sk-... admin key we generate
+      DATABASE_URL: ${LITELLM_DATABASE_URL}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}     # from Langfuse UI after first login
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_HOST: http://100.98.245.52:3000
+
+  litellm-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD}
+      POSTGRES_DB: litellm
+      TZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - litellm_postgres:/var/lib/postgresql/data
+
+volumes:
+  litellm_postgres:
