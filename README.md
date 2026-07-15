@@ -41,3 +41,23 @@ L0 infra · L1 containment · L2 gateway/routing · L3 harness · L4 legibility
   SCP Firewall Policies exist as option B after all
 - Timezone: UTC. Divergences from plan: panel key injection replaced the
   key-retrofit sequence; SCP has firewall + SSH-key features the plan assumed absent
+## L1 — As built (15 Jul 2026)
+
+- Runner: waterline-runner-1 (Netcup VPS 1000 G12, hourly), tailnet
+  100.109.125.122, same hardening posture as controller
+- Containment: Docker sandboxes on sandbox-net (172.30.0.0/24); iptables
+  DOCKER-USER locks egress to controller only; proven by three-probe test
+  (direct blocked / proxy-allowed 200 / proxy-denied refused)
+- Egress proxy: tinyproxy on controller :8888, extended-regex allowlist
+  (github, pypi, npm + interim api.anthropic.com), every request logged
+- Sandbox image: waterline/sandbox-base:v0 — Ubuntu 24.04, Claude Code
+  pinned 2.1.210, managed-settings deny-floor baked read-only, non-root
+  agent (uid 1001), proxy env baked
+- Lifecycle: bin/sandbox-run.sh v0.2 — create→inject→exec→harvest→destroy;
+  caps as config (timeout/mem/cpus); result record JSON per task
+- Credentials: sandboxes hold only a budget-capped model key (interim,
+  dies at L2); git PAT lives on runner host only; harvest is external
+- First run: task-001 — status completed, 32s, $0.11, 1 file changed;
+  agent wrote ARCHITECTURE.md from inside the containment
+- Known debt: interim Anthropic key → L2 virtual keys; agent telemetry
+  files inside repo diff → v0.3 out-mount; see docs/failure-log.md
