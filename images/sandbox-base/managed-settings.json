@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/secrets/**)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Bash(rm -rf /*)",
+      "Bash(git push --force*)",
+      "Bash(curl * | sh*)",
+      "Bash(curl * | bash*)"
+    ]
+  }
+}
