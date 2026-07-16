@@ -2,3 +2,4 @@
 **/.env
 *.key
 gateway-master.key
+.DS_Store
