@@ -1,7 +1,8 @@
 <clickhouse>
     <!-- Cap ClickHouse memory so it cannot OOM the box it shares with the
          LiteLLM gateway and OS. ~3GB is ample for lab-scale trace volume.
-         Raise if trace volume ever grows and the box has headroom. -->
+         Only max_server_memory_usage is valid at this (server-config) level.
+         Per-query limits (max_memory_usage) are user-profile settings and must
+         NOT appear here — they crash-loop the server (UNKNOWN_ELEMENT_IN_CONFIG). -->
     <max_server_memory_usage>3221225472</max_server_memory_usage>
-    <max_memory_usage>2147483648</max_memory_usage>
 </clickhouse>
