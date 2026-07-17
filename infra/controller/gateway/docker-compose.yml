@@ -1,15 +1,12 @@
 # LiteLLM gateway stack — waterline controller (tailnet + sandbox-net reachable)
-# Deploy to: /opt/substrate/gateway/  on waterline-control
+# Deploy to: /opt/waterline-repo/infra/controller/gateway/ on waterline-control
 #
-# Port binding note: the gateway must be reachable from TWO places —
-#   1. your Mac over the tailnet (admin), and
-#   2. sandboxes on the runner, which arrive via the runner's tailnet path.
-# Both arrive on the tailnet interface, so binding to the tailnet IP covers both.
-# The runner-side iptables allow (sandbox-net -> controller:4000) is what lets
-# sandboxes reach it; the gateway itself just listens on the tailnet.
+# Image PINNED (never :latest / :main-stable) — the litellm-database image is
+# required for virtual keys + spend tracking. v1.89.0: past the Mar-2026 supply
+# chain incident, includes Claude Opus 4.8 adaptive-thinking routing.
 services:
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    image: ghcr.io/berriai/litellm-database:v1.89.0
     restart: unless-stopped
     depends_on:
       litellm-db: { condition: service_healthy }
@@ -20,11 +17,13 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}         # the ONE real key (waterline-gateway)
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}       # sk-... admin key we generate
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}       # sk-... admin key
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}           # encrypts stored keys; MUST persist across redeploys
       DATABASE_URL: ${LITELLM_DATABASE_URL}
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}     # from Langfuse UI after first login
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       LANGFUSE_HOST: http://100.98.245.52:3000
+      STORE_MODEL_IN_DB: "True"
 
   litellm-db:
     image: postgres:17
