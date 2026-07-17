@@ -61,3 +61,27 @@ L0 infra · L1 containment · L2 gateway/routing · L3 harness · L4 legibility
   agent wrote ARCHITECTURE.md from inside the containment
 - Known debt: interim Anthropic key → L2 virtual keys; agent telemetry
   files inside repo diff → v0.3 out-mount; see docs/failure-log.md
+
+
+## L2 — As built (17 Jul 2026)
+
+- **Langfuse v3** live on the controller (6 containers: web, worker, postgres,
+  clickhouse, redis, minio), tailnet-bound at :3000, ClickHouse memory-capped.
+  Deployed from upstream compose + our overrides (deploy/deploy-langfuse.md).
+  Auto-bootstrapped org/project/admin + project keys via LANGFUSE_INIT_* vars.
+- **LiteLLM gateway** live at :4000 — image pinned `litellm-database:v1.89.0`,
+  own postgres for key store + spend ledger, LITELLM_SALT_KEY set, Langfuse
+  logging wired (deploy/deploy-gateway.md).
+- **Tier aliases** (the "ministry of experts"): plan→Opus, execute→Sonnet,
+  verify→Haiku — plus pass-through for Claude Code's own model strings.
+- **Per-task virtual keys**: sandbox-run.sh v0.3 mints a $1-budget key at create,
+  passes it + the gateway base-URL into the sandbox, reads spend back at harvest,
+  revokes at destroy. The sandbox holds no real credential.
+- **Key model**: real Anthropic key → controller only; LiteLLM master key →
+  controller + runner host (mints keys, never enters a sandbox); virtual key →
+  sandbox only.
+- **Proven end-to-end**: task-001 via v0.3 — status completed, 41s, spend_usd
+  $0.226 (from the gateway ledger), trace + cost visible in Langfuse.
+- **Interim path retired**: waterline-interim key revoked; tinyproxy
+  api.anthropic.com line removed (model traffic is gateway-direct now).
+- **L2 exit gate met.** Known debt → docs/architecture.md "Known debt".
