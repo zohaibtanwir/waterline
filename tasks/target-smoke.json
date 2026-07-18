@@ -1,0 +1,12 @@
+{
+  "task_id": "target-smoke",
+  "repo_url": "https://github.com/zohaibtanwir/target-flaskapp.git",
+  "branch": "main",
+  "mount": "ro",
+  "prompt": "Run the test suite with: pip install -r requirements.txt && python -m pytest -v . Report how many tests passed and failed. Do not modify any code.",
+  "caps": {
+    "timeout_seconds": 600,
+    "memory": "2g",
+    "cpus": "2"
+  }
+}
