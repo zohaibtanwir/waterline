@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.4 — mint → inject → exec → harvest → destroy
-# New in v0.4 (the "escape hatch is too wide" fix):
-#   - Second mount /workspace/out for agent report (survives, cleanly separated)
-#   - Agent stdout/stderr go to /workspace/out, NOT into the repo
-#   - venv/caches directed to UNMOUNTED paths (/workspace/venv, /tmp) — die with container
-#   - Harvest ignore patterns as safety net (.venv, node_modules, __pycache__, .claude-*)
-#   - Result record gains report_path + summary
-#   - Task-spec field "mount": "ro"|"rw" (default rw) — read-only enforced for analyze tasks
+# waterline sandbox runner v0.5 — mint → inject → exec → harvest → destroy
+# New in v0.5:
+#   - Task-spec "env": {"KEY":"value", ...} — injected into the container as
+#     environment variables. Transport for per-task config that must reach the
+#     agent session and its hooks (e.g. KEEL_TEST_CMD) without editing managed
+#     files in the target repo. Keys are passed as-is; values must not contain
+#     secrets (per-task model key is injected separately by this script).
+# v0.4 (retained): out-mount for report; unmounted venv/caches; harvest
+#   excludes; "mount":"ro"|"rw"; result record with report_path + summary.
 # Usage: sandbox-run.sh <task-spec.json>
 set -euo pipefail
 export GIT_TERMINAL_PROMPT=0
@@ -21,6 +22,12 @@ MEM=$(jq -r '.caps.memory // "2g"' "$TASK_FILE")
 CPUS=$(jq -r '.caps.cpus // "2"' "$TASK_FILE")
 BUDGET=$(jq -r '.caps.budget_usd // 1' "$TASK_FILE")
 MOUNT_MODE=$(jq -r '.mount // "rw"' "$TASK_FILE")   # "ro" for analyze-only tasks
+
+# v0.5: per-task env from spec → docker -e flags
+ENV_FLAGS=()
+while IFS= read -r kv; do
+  [ -n "$kv" ] && ENV_FLAGS+=(-e "$kv")
+done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' "$TASK_FILE")
 
 GATEWAY_URL="http://100.98.245.52:4000"
 GATEWAY_MASTER_KEY=$(cat /opt/waterline/gateway-master.key)
@@ -53,7 +60,7 @@ chown -R 1001:1001 "$WORK/repo" "$OUT"
 REPO_MOUNT="$WORK/repo:/workspace/repo"
 [ "$MOUNT_MODE" = "ro" ] && REPO_MOUNT="$REPO_MOUNT:ro"
 
-echo "[$TASK_ID] create+exec: sandbox up (timeout ${TIMEOUT_S}s, mem $MEM, cpus $CPUS)"
+echo "[$TASK_ID] create+exec: sandbox up (timeout ${TIMEOUT_S}s, mem $MEM, cpus $CPUS, extra env: ${#ENV_FLAGS[@]})"
 START=$(date -u +%s)
 set +e
 timeout "${TIMEOUT_S}s" docker run --name "$CN" \
@@ -62,6 +69,7 @@ timeout "${TIMEOUT_S}s" docker run --name "$CN" \
   -e ANTHROPIC_BASE_URL="$GATEWAY_URL" \
   -e TASK_PROMPT="$PROMPT" \
   -e PIP_CACHE_DIR=/tmp/pip-cache \
+  ${ENV_FLAGS[@]+"${ENV_FLAGS[@]}"} \
   -v "$REPO_MOUNT" \
   -v "$OUT:/workspace/out" \
   waterline/sandbox-base:v0 \
@@ -86,7 +94,6 @@ __pycache__/
 .pytest_cache/
 EOF
 git -C "$WORK/repo" add -A
-# unstage excluded patterns (safety net — this junk should have died with the container)
 while read -r pat; do
   git -C "$WORK/repo" reset -q -- "$pat" 2>/dev/null || true
   git -C "$WORK/repo" rm -r -q --cached --ignore-unmatch "$pat" 2>/dev/null || true
