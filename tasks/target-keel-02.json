@@ -1,0 +1,14 @@
+{
+  "task_id": "target-keel-02",
+  "repo_url": "https://github.com/zohaibtanwir/target-flaskapp.git",
+  "branch": "main",
+  "mount": "ro",
+  "prompt": "Read the repository and give a two-paragraph summary of what the application does. Do not modify anything.",
+  "env": {
+    "KEEL_TEST_CMD": "false"
+  },
+  "caps": {
+    "timeout_seconds": 600,
+    "budget_usd": 1
+  }
+}
