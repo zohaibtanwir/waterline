@@ -15,8 +15,21 @@ substrate inherits.
 | 7 | 16 Jul | deploy (Langfuse) | langfuse-web P1000 DB auth — DATABASE_URL fell back to upstream default password 'postgres' | config gap (template drift) | Added explicit DATABASE_URL to .env.example; aligned template to upstream compose vars | langfuse/.env.example |
 | 8 | 16 Jul | deploy (Langfuse) | Postgres volume initialized during earlier partial boot with a mismatched password; correct .env still failed | state (init-once) | down + docker volume rm langfuse_langfuse_postgres_data + up | deploy-langfuse.md gotchas |
 | 9 | 17 Jul | deploy (gateway) | tinyproxy filter sed with \\. escapes did not match; api.anthropic.com line survived first removal attempt | ops (regex escaping) | Simpler literal sed '/anthropic/d'; verified grep -c = 0 (verify, don't assume) | tinyproxy-filter |
+| 10 | 19 Jul | placement (Keel v0.1) | Command block assumed repo at ~/waterline; real clone is ~/projects/waterline. mkdir -p created the stray tree instead of failing, so five files landed in a directory that looked correct from the shell. Surfaced six exchanges later via "not a git repository". Compounded: a partial keel/ already existed in the real repo, so the corrective mv nested it as keel/keel/ | process (unverified assumption) | Flattened nesting, moved into real repo, removed stray, committed. Protocol amendment: command blocks that write to a path must use a path confirmed in-session, or open with a step that fails loudly. Do not infer repo locations | this log; working protocol |
+
 
 Diagnosis discipline (from the harness article): name the layer first —
 harness/infra failures (permissions, network, credentials, config) vs loop
-failures (agent never converges, verification passes garbage). Entries 1–9 are
-all infra/script/config/ops/design layer; no agent-behavior failures yet.
+failures (agent never converges, verification passes garbage). Entries 1–10 are
+all infra/script/config/ops/design/process layer; no agent-behavior failures yet.
+
+Recurring shape — silent success where an error was warranted. Three
+instances so far: mkdir -p fabricating a wrong path rather than failing (10);
+a direct edit to a managed Keel file being overwritten with no warning on the
+next upgrade (SSOT drift, docs/deferred.md); an unset KEEL_TEST_CMD disabling
+the done-means-verified gate while merely nagging (keel/hooks/require-green.sh).
+Entry 3 is arguably a fourth — grep -v exiting 1 on zero changes was the
+inverse, a loud failure on a correct state. The design rule falling out of
+this: when a step encodes an assumption, make its violation noisy. Convenience
+flags that suppress errors are the most common way an assumption survives long
+enough to compound.
