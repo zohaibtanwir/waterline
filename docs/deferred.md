@@ -114,8 +114,14 @@ missing piece is iteration — today a task gets one shot, not a converge loop.
 task that fails the gate retries against disk state instead of ending.
 **Trigger.** After Keel v0.1 is verified live on target-flaskapp. Or the first
 task that needs convergence rather than a single pass.
-**Status 20 Jul.** Trigger FIRED — six verified runs, every Keel mechanism
-probed on both doors. Held by explicit choice; next planned L3 build.
+**Status 20 Jul (L3 close).** Trigger FIRED — six verified runs, every Keel
+mechanism probed on both doors. Held by explicit choice, and deliberately
+assigned to NO layer: L3 closed as the harness layer without it, and it does
+not enter L4 or any other layer until its adoption and placement have been
+debated on their own. The three design forks from the 20 Jul discussion
+(state in the out-mount vs repo; loop outside sandbox-run.sh as composition;
+convergence = the loop runs KEEL_TEST_CMD itself, never the agent's
+self-declared STATUS) are recorded here so the debate starts warm, not cold.
 
 ### Async spend ledger on fast runs
 **What.** The gateway spend query at task destroy under-reports on short
