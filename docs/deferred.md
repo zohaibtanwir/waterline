@@ -114,6 +114,20 @@ missing piece is iteration — today a task gets one shot, not a converge loop.
 task that fails the gate retries against disk state instead of ending.
 **Trigger.** After Keel v0.1 is verified live on target-flaskapp. Or the first
 task that needs convergence rather than a single pass.
+**Status 20 Jul.** Trigger FIRED — six verified runs, every Keel mechanism
+probed on both doors. Held by explicit choice; next planned L3 build.
+
+### Async spend ledger on fast runs
+**What.** The gateway spend query at task destroy under-reports on short
+runs: a 7s probe read $0.0022 against ~$0.18 of token cost; a 13s probe read
+$0.096 against ~$0.197. LiteLLM updates its spend ledger asynchronously, and
+the runner queries it immediately before revoking the key.
+**Why.** The result record's spend_usd is the number we quote. On fast tasks
+it can be wrong by an order of magnitude. model_usage (v0.6) carries the
+agent-side figure as a cross-check, but agent-side pricing is unreliable with
+gateway aliases — so neither number alone is trustworthy on a fast run.
+**Trigger.** sandbox-run v0.7: delay or retry the spend query before revoke.
+Or the economics layer (L8), whichever comes first.
 
 ### Path-scoped rules
 **What.** `.claude/rules/*.md` are discovered recursively. Rules carrying a
@@ -232,6 +246,27 @@ cannot see what they did not declare. Our pinned image and iptables lockdown
 are the crude version of the same principle.
 **Trigger.** L4 reproducibility work, or the first "works on my machine"
 failure that costs a day.
+
+### Org-evolution research pass (the twenty-item list)
+**What.** His standing list of org-scale practices: cloning and standardising
+skills across squads, package-manager and OS standardisation, app-run skills,
+code-search optimisation, root-vs-module CLAUDE.md structure, CI gates and
+pre/post hooks, central learning capture at session end, central
+context-injection at session start, LLM conventions, prompt optimisation,
+setup/run scripts, env secrets discipline, PR artifact standards, PR review
+agents (CodeRabbit, Greptile), coding conventions, testing discipline,
+security checks, controlling non-determinism, model routing
+("ministry of experts"), read-only DB access, headless browser testing
+agents, mail agents. Three items already absorbed into Keel v0.1 (ripgrep
+rule, secrets never-do, module-CLAUDE.md finding).
+**Why.** This is the substrate's org-scale evolution — the difference between
+a harness that works and a practice that compounds across four hundred
+engineers. Deliberately not day-zero: researching twenty practices against an
+unproven harness would have produced guesses.
+**Output when run.** Per-item best-practice position plus a layer assignment:
+absorb into Keel / L5 / L6 / defer-with-trigger.
+**Trigger.** L3 closed and the first multi-developer or client-repo
+engagement in view — the pass needs a real org to aim at.
 
 ### Harder proving grounds
 **What.** target-flaskapp is 110 lines with one real bug. Trip Concierge is a

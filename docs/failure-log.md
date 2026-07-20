@@ -16,20 +16,26 @@ substrate inherits.
 | 8 | 16 Jul | deploy (Langfuse) | Postgres volume initialized during earlier partial boot with a mismatched password; correct .env still failed | state (init-once) | down + docker volume rm langfuse_langfuse_postgres_data + up | deploy-langfuse.md gotchas |
 | 9 | 17 Jul | deploy (gateway) | tinyproxy filter sed with \\. escapes did not match; api.anthropic.com line survived first removal attempt | ops (regex escaping) | Simpler literal sed '/anthropic/d'; verified grep -c = 0 (verify, don't assume) | tinyproxy-filter |
 | 10 | 19 Jul | placement (Keel v0.1) | Command block assumed repo at ~/waterline; real clone is ~/projects/waterline. mkdir -p created the stray tree instead of failing, so five files landed in a directory that looked correct from the shell. Surfaced six exchanges later via "not a git repository". Compounded: a partial keel/ already existed in the real repo, so the corrective mv nested it as keel/keel/ | process (unverified assumption) | Flattened nesting, moved into real repo, removed stray, committed. Protocol amendment: command blocks that write to a path must use a path confirmed in-session, or open with a step that fails loudly. Do not infer repo locations | this log; working protocol |
+| 11 | 20 Jul | deploy (Keel v0.1.1 upgrade) | Pasted command block died at a `quote>` prompt: an apostrophe in a comment label line opened an unterminated zsh string and swallowed every following line; separately, pasted `#` labels error as commands because interactive_comments is off in this zsh | ops (shell quoting) | Ctrl+C, re-ran block with ASCII-clean label; protocol: label lines carry no apostrophes or parentheses; optional permanent fix `setopt interactive_comments` | working protocol |
+
+| 12 | 20 Jul | config (Keel settings) | `Write(/**)` deny — intended as "deny all absolute-path writes" — was an invalid pattern that Claude Code SILENTLY IGNORED: no error, no warning, no protection, for five runs. Surfaced only because probe target-keel-05 ordered the agent to attempt the forbidden write and it succeeded. Compounding: silence also fit "flag bypasses denies", a wrong diagnosis that stood for half a day | config (silent-ignore of invalid rule) | Corrected to `//**` (absolute form). Verified by three probes: interactive Write denied with no prompt; sandbox Write denied; sandbox Bash redirect to the denied path also denied and recorded in permission_denials. Rule going forward: a deny is not deployed until a probe has watched it refuse | keel/settings.json v0.1.2; README v0.1.3 two-walls; this log |
 
 
 Diagnosis discipline (from the harness article): name the layer first —
 harness/infra failures (permissions, network, credentials, config) vs loop
-failures (agent never converges, verification passes garbage). Entries 1–10 are
-all infra/script/config/ops/design/process layer; no agent-behavior failures yet.
+failures (agent never converges, verification passes garbage). Entries 1–12
+are all infra/script/config/ops/process layer; no agent-behavior failures yet.
 
-Recurring shape — silent success where an error was warranted. Three
-instances so far: mkdir -p fabricating a wrong path rather than failing (10);
-a direct edit to a managed Keel file being overwritten with no warning on the
-next upgrade (SSOT drift, docs/deferred.md); an unset KEEL_TEST_CMD disabling
-the done-means-verified gate while merely nagging (keel/hooks/require-green.sh).
-Entry 3 is arguably a fourth — grep -v exiting 1 on zero changes was the
-inverse, a loud failure on a correct state. The design rule falling out of
-this: when a step encodes an assumption, make its violation noisy. Convenience
-flags that suppress errors are the most common way an assumption survives long
-enough to compound.
+Recurring shape — **silent success where an error was warranted.** Five
+instances: an invalid deny pattern silently discarded while appearing to
+protect (12); `mkdir -p` fabricating a wrong path rather than failing (10); a
+direct edit to a managed Keel file overwritten with no warning on upgrade
+(SSOT drift, docs/deferred.md); an unset KEEL_TEST_CMD disabling the
+done-means-verified gate while merely nagging (require-green.sh); an npm
+install whose postinstall never ran, leaving a stub that failed only weeks
+later (environment, 20 Jul). Entry 3 is the inverse — a loud failure on a
+correct state. The design rule falling out of this: when a step encodes an
+assumption, make its violation noisy; when a config claims protection, probe
+it before trusting it. Convenience that suppresses errors is how an assumption
+survives long enough to compound — and a protection you have only read is a
+protection you do not have.

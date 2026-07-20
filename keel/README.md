@@ -1,4 +1,4 @@
-# Keel v0.1.2
+# Keel v0.1.3
 
 The base layer of an agentic engineering harness. Versioned, shipped into a
 target repo, and not edited there.
@@ -19,19 +19,27 @@ CLAUDE.md, settings.local.json, or .mcp.json.
 
 ## The two walls
 
-Keel's protections live in two different layers, and it matters which one you
-are trusting:
+Keel's protections live in two layers. Both are real, they guard different
+doors, and they fail differently:
 
-**Permission rules** (`settings.json`) protect the *interactive* door — a
-developer at a terminal, where allows suppress prompt fatigue and denies are
-live. In headless sandbox runs with permission-skipping enabled, deny rules
-were observed NOT to block (probe: target-keel-05), so treat them as
-developer-session guardrails, not sandbox security.
+**Permission rules** (`settings.json`) are live on BOTH doors — verified by
+probe on each. An interactive session denied an absolute-path Write outright,
+no prompt (Door 1 test, 20 Jul). A headless sandbox run under a
+permission-skipping flag denied the same Write AND a Bash redirect aimed at
+the denied path — the permission layer inspects redirect targets inside shell
+commands (probe target-keel-06). Deny rules bind, in both modes, **when the
+pattern is valid.**
 
-**The container boundary** protects the *sandboxed* door — a read-only or
-scoped repo mount, unmounted scratch that dies at destroy, allowlist-only
-network. This is the wall that actually held in every probe. If a control must
-hold against an agent, put it in the mount and the network, not the config.
+The caution that survives: **an invalid pattern is silently ignored, not
+rejected.** v0.1 shipped `Write(/**)` — one slash short of the absolute form
+`//**` — and received no protection and no warning for five runs. Validate
+every deny rule with a probe after writing it; a deny you have only read is a
+deny you do not have.
+
+**The container boundary** — read-only or scoped repo mounts, unmounted
+scratch that dies at destroy, allowlist-only network — held in every probe,
+including the five runs when the config wall was silently absent. That is the
+argument for two walls: they fail independently.
 
 ## Install
 
@@ -63,6 +71,10 @@ Files here are managed. A direct edit is lost on the next upgrade. Repo-specific
 behaviour goes in the local layer, which merges with rather than replaces this
 one.
 
+Each file's header records the Keel version at which that file last changed;
+this README states the current release. A file whose header says an older
+version is unchanged since then, not stale.
+
 ## The promotion test
 
 A convention from a client repo joins this base layer only if all three hold:
@@ -86,19 +98,22 @@ is running.
 
 ## Changes
 
+- **v0.1.3** — two-walls section rewritten after probe target-keel-06: deny
+  rules verified to bind on both doors, including Bash-redirect inspection;
+  the true run-05 failure was an invalid pattern silently ignored, not a
+  flag bypass. Header convention documented (headers = last-changed version).
 - **v0.1.2** — verifier carries the full 11-shortcut catalogue (sourced:
-  moonrunnerkc/swarm-orchestrator, mined from 327 real agent PRs; the source's
-  own precision data says these are tips, not proof — the mechanical gate and
-  the human stay the deciders). Absolute-path deny patterns corrected to `//**`
-  (leading `/` is project-root-relative in permission rules). "Two walls"
-  section added after probe target-keel-05 showed deny rules do not bind in
-  permission-skipping sandbox runs. `bin/check-budget.sh` added — the 300-line
-  budget is now checked, not remembered.
+  moonrunnerkc/swarm-orchestrator, 327 mined agent PRs). Absolute-path deny
+  patterns corrected to `//**`. `bin/check-budget.sh` added.
 - **v0.1.1** — durability rule (the diff is the deliverable); gate audit log.
 - **v0.1** — initial: conventions, permissions, stop gate, thin verifier.
 
 ## Verified so far
 
+- Deny rules: absolute-path Write refused interactively with no prompt
+  (Door 1), and refused in a headless skip-permissions sandbox for both the
+  Write tool and a Bash redirect, with the Bash denial recorded in
+  permission_denials (target-keel-06).
 - Stop gate: all three production branches observed — refuse on red with one
   retry then loud release (target-keel-02), pass on green (target-keel-04),
   loud nag when unconfigured (target-keel-05). Every firing is in
@@ -106,9 +121,9 @@ is running.
 - Full pipeline: real bug fixed under the rules, cause not tests, diff in the
   working tree (target-keel-01, -04).
 - Tier routing via task-spec env reaches the gateway aliases; the result
-  record self-reports the model (target-keel-03, -05).
-- Container boundary held in every probe; see "The two walls" for what the
-  permission config does and does not do.
+  record self-reports the model (target-keel-03 through -06).
+- Container boundary held in every probe, including while the config wall was
+  silently absent.
 
 ## Known open
 
@@ -116,5 +131,6 @@ is running.
   verifier being invoked. Needs a task that requires it and an
   invocation-evidence channel.
 - No installer. Install and upgrade are manual copies; write the installer at
-  the second target or the third upgrade, whichever comes first.
+  the second target or the next upgrade, whichever comes first (three manual
+  copies done — the case is made).
 - No drift detection. A direct edit to a managed file fails silently today.
