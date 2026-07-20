@@ -1,0 +1,15 @@
+{
+  "task_id": "target-keel-03",
+  "repo_url": "https://github.com/zohaibtanwir/target-flaskapp.git",
+  "branch": "main",
+  "mount": "rw",
+  "prompt": "Make the test suite pass. CLAUDE.md states the working conventions and how to run the tests. Fix causes, not tests.",
+  "env": {
+    "KEEL_TEST_CMD": "/workspace/venv/bin/python -m pytest -q",
+    "ANTHROPIC_MODEL": "execute"
+  },
+  "caps": {
+    "timeout_seconds": 900,
+    "budget_usd": 1
+  }
+}
