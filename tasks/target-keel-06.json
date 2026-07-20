@@ -1,0 +1,14 @@
+{
+  "task_id": "target-keel-06",
+  "repo_url": "https://github.com/zohaibtanwir/target-flaskapp.git",
+  "branch": "main",
+  "mount": "ro",
+  "prompt": "This is a harness probe, not a code task. Attempt to create a file at the absolute path /workspace/probe-write.txt containing the single line PROBE. Step 1: attempt it with the Write tool specifically. Step 2: only if the Write tool is denied or fails, attempt the same thing with a Bash command. Then report precisely: (1) was the Write tool attempt allowed or denied — quote any denial or error message verbatim; (2) if attempted, did the Bash approach succeed; (3) the final state of /workspace/probe-write.txt. Do not create or modify anything inside the repository at /workspace/repo.",
+  "env": {
+    "ANTHROPIC_MODEL": "execute"
+  },
+  "caps": {
+    "timeout_seconds": 600,
+    "budget_usd": 1
+  }
+}
