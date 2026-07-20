@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.5 — mint → inject → exec → harvest → destroy
-# New in v0.5:
+# waterline sandbox runner v0.6 — mint → inject → exec → harvest → destroy
+# New in v0.6:
+#   - Harvest lifts modelUsage from the agent report into the result record:
+#     "model" (first model key, e.g. an alias like "execute" or a concrete
+#     model name) and "model_usage" (the full per-model token/cost object).
+#     Gateway spend remains the authoritative cost; model_usage is evidence.
+#   - "extra env" log line now counts variables, not array elements.
+# v0.5 (retained):
 #   - Task-spec "env": {"KEY":"value", ...} — injected into the container as
 #     environment variables. Transport for per-task config that must reach the
 #     agent session and its hooks (e.g. KEEL_TEST_CMD) without editing managed
@@ -60,7 +66,7 @@ chown -R 1001:1001 "$WORK/repo" "$OUT"
 REPO_MOUNT="$WORK/repo:/workspace/repo"
 [ "$MOUNT_MODE" = "ro" ] && REPO_MOUNT="$REPO_MOUNT:ro"
 
-echo "[$TASK_ID] create+exec: sandbox up (timeout ${TIMEOUT_S}s, mem $MEM, cpus $CPUS, extra env: ${#ENV_FLAGS[@]})"
+echo "[$TASK_ID] create+exec: sandbox up (timeout ${TIMEOUT_S}s, mem $MEM, cpus $CPUS, extra env: $(( ${#ENV_FLAGS[@]} / 2 )))"
 START=$(date -u +%s)
 set +e
 timeout "${TIMEOUT_S}s" docker run --name "$CN" \
@@ -104,8 +110,12 @@ CHANGED=$(git -C "$WORK/repo" diff --cached --name-only "$BASE_SHA" | wc -l | tr
 # agent report: path + short summary
 REPORT_PATH="$OUT/claude-output.json"
 SUMMARY=""
+MODEL="unknown"
+MODEL_USAGE="{}"
 if [ -f "$REPORT_PATH" ]; then
   SUMMARY=$(jq -r '.result // empty' "$REPORT_PATH" 2>/dev/null | head -c 200 || true)
+  MODEL=$(jq -r '.modelUsage | keys[0] // "unknown"' "$REPORT_PATH" 2>/dev/null || echo unknown)
+  MODEL_USAGE=$(jq -c '.modelUsage // {}' "$REPORT_PATH" 2>/dev/null || echo '{}')
 fi
 
 SPEND=$(curl -s -X GET "$GATEWAY_URL/key/info?key=$VKEY" \
@@ -125,6 +135,8 @@ jq -n \
   --arg spend "$SPEND" \
   --arg budget "$BUDGET" \
   --arg mount "$MOUNT_MODE" \
+  --arg model "$MODEL" \
+  --argjson model_usage "$MODEL_USAGE" \
   --arg diff_path "$DIFF_FILE" \
   --arg report_path "$REPORT_PATH" \
   --arg summary "$SUMMARY" \
@@ -133,7 +145,8 @@ jq -n \
     base_sha:$base_sha, duration_seconds:($duration|tonumber),
     changed_files:($changed_files|tonumber),
     spend_usd:($spend|tonumber), budget_usd:($budget|tonumber),
-    mount:$mount, diff_path:$diff_path,
+    mount:$mount, model:$model, model_usage:$model_usage,
+    diff_path:$diff_path,
     report_path:$report_path, summary:$summary, workdir:$workdir}' \
   > "$RESULT"
 
