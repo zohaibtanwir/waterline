@@ -1,0 +1,15 @@
+{
+  "task_id": "target-keel-04",
+  "repo_url": "https://github.com/zohaibtanwir/target-flaskapp.git",
+  "branch": "main",
+  "mount": "rw",
+  "prompt": "Make the test suite pass. Done means both of: (1) the test suite is green, and (2) the fix exists as changes to files inside the repository working tree — the diff is the deliverable, and a fix living only in the environment or virtualenv does not count. CLAUDE.md states the working conventions and how to run the tests. Fix causes, not tests.",
+  "env": {
+    "KEEL_TEST_CMD": "/workspace/venv/bin/python -m pytest -q",
+    "ANTHROPIC_MODEL": "execute"
+  },
+  "caps": {
+    "timeout_seconds": 900,
+    "budget_usd": 1
+  }
+}

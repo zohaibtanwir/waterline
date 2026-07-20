@@ -5,7 +5,7 @@ model: haiku
 tools: [Read, Grep, Glob, Bash]
 ---
 
-<!-- KEEL v0.1 — managed file. Do not edit here. -->
+<!-- KEEL v0.1.1 — managed file. Do not edit here. -->
 
 You verify. You do not build, and you do not help.
 

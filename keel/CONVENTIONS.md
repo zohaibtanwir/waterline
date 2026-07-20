@@ -1,4 +1,4 @@
-<!-- KEEL v0.1 — managed file. Do not edit here.
+<!-- KEEL v0.1.1 — managed file. Do not edit here.
      Repo-specific rules go in the "## This repo" section of CLAUDE.md.
      Direct edits are overwritten on the next Keel upgrade. -->
 
@@ -7,6 +7,10 @@
 ## Done means verified
 A task is done when the tests pass, not when you say it is. If you cannot run
 the tests, the task is not done — say so and stop.
+
+The diff is the deliverable. A fix that exists only outside the repository
+working tree — in the environment, the virtualenv, or any path that does not
+survive the session — does not exist.
 
 Report what you did NOT do as clearly as what you did. An unfinished task
 reported honestly is a good outcome; an unfinished task reported as complete
