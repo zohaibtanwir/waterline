@@ -1,4 +1,4 @@
-# Keel v0.1.1
+# Keel v0.1.2
 
 The base layer of an agentic engineering harness. Versioned, shipped into a
 target repo, and not edited there.
@@ -14,17 +14,35 @@ CLAUDE.md, settings.local.json, or .mcp.json.
 | `CONVENTIONS.md` | Standing rules. Imported by the target's CLAUDE.md. |
 | `settings.json` | Tool permissions, secret denial, hook registration. |
 | `hooks/require-green.sh` | Stop gate — refuses to finish on a red suite. Audits to the out mount. |
-| `agents/verifier.md` | Adversarial check of a diff against the spec. |
+| `agents/verifier.md` | Adversarial diff check — the full 11-shortcut catalogue. |
+| `bin/check-budget.sh` | Counts assembled standing context; warns at 250 lines, fails at 300. |
+
+## The two walls
+
+Keel's protections live in two different layers, and it matters which one you
+are trusting:
+
+**Permission rules** (`settings.json`) protect the *interactive* door — a
+developer at a terminal, where allows suppress prompt fatigue and denies are
+live. In headless sandbox runs with permission-skipping enabled, deny rules
+were observed NOT to block (probe: target-keel-05), so treat them as
+developer-session guardrails, not sandbox security.
+
+**The container boundary** protects the *sandboxed* door — a read-only or
+scoped repo mount, unmounted scratch that dies at destroy, allowlist-only
+network. This is the wall that actually held in every probe. If a control must
+hold against an agent, put it in the mount and the network, not the config.
 
 ## Install
 
 Copy into the target repo. Two files must sit at Claude Code's standard
-discovery paths; two stay under the keel directory:
+discovery paths; the rest stay under the keel directory:
 
 - `settings.json` → `.claude/settings.json`
 - `agents/verifier.md` → `.claude/agents/verifier.md`
 - `CONVENTIONS.md` → `.claude/keel/CONVENTIONS.md`
 - `hooks/require-green.sh` → `.claude/keel/hooks/require-green.sh` (executable)
+- `bin/check-budget.sh` → `.claude/keel/bin/check-budget.sh` (executable)
 
 Add to the target's `CLAUDE.md`:
 
@@ -55,7 +73,7 @@ A convention from a client repo joins this base layer only if all three hold:
 
 Rule three is the one that keeps this file short. Additions are cheap and
 compound; the budget is the whole assembled context, and past roughly 300 lines
-measured task completion falls off sharply.
+measured task completion falls off sharply. `bin/check-budget.sh` enforces it.
 
 ## Versioning
 
@@ -68,28 +86,35 @@ is running.
 
 ## Changes
 
-- **v0.1.1** — durability rule (the diff is the deliverable; environment-only
-  fixes do not count as done — from run target-keel-03, where a green run
-  produced an empty diff); gate writes an audit line per firing to
-  `/workspace/out/keel-gate.log` when the out mount exists (from run
-  target-keel-02, where gate evidence existed only in the agent's narrative).
+- **v0.1.2** — verifier carries the full 11-shortcut catalogue (sourced:
+  moonrunnerkc/swarm-orchestrator, mined from 327 real agent PRs; the source's
+  own precision data says these are tips, not proof — the mechanical gate and
+  the human stay the deciders). Absolute-path deny patterns corrected to `//**`
+  (leading `/` is project-root-relative in permission rules). "Two walls"
+  section added after probe target-keel-05 showed deny rules do not bind in
+  permission-skipping sandbox runs. `bin/check-budget.sh` added — the 300-line
+  budget is now checked, not remembered.
+- **v0.1.1** — durability rule (the diff is the deliverable); gate audit log.
 - **v0.1** — initial: conventions, permissions, stop gate, thin verifier.
 
 ## Verified so far
 
-- Stop gate fires, refuses, retries once, releases loudly (run target-keel-02).
-- Full pipeline: real bug fixed under the rules, cause not tests (run
-  target-keel-01).
-- Tier routing via task-spec env reaches the gateway aliases (run
-  target-keel-03).
+- Stop gate: all three production branches observed — refuse on red with one
+  retry then loud release (target-keel-02), pass on green (target-keel-04),
+  loud nag when unconfigured (target-keel-05). Every firing is in
+  `keel-gate.log`.
+- Full pipeline: real bug fixed under the rules, cause not tests, diff in the
+  working tree (target-keel-01, -04).
+- Tier routing via task-spec env reaches the gateway aliases; the result
+  record self-reports the model (target-keel-03, -05).
+- Container boundary held in every probe; see "The two walls" for what the
+  permission config does and does not do.
 
 ## Known open
 
-- `Write(/**)` / `Edit(/**)` deny semantics remain unverified — run 03's
-  out-of-repo file was created via Bash, which permission rules on Write do
-  not cover; a dedicated probe is queued.
-- The verifier's checklist is four items; the known catalogue is eleven. No
-  evidence yet that the verifier is invoked at all.
+- Verifier invocation: the checklist is complete, but no run has yet shown the
+  verifier being invoked. Needs a task that requires it and an
+  invocation-evidence channel.
 - No installer. Install and upgrade are manual copies; write the installer at
-  the second target or the second upgrade, whichever comes first.
+  the second target or the third upgrade, whichever comes first.
 - No drift detection. A direct edit to a managed file fails silently today.

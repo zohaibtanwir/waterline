@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# KEEL v0.1.1 — managed file. Do not edit here.
+# KEEL v0.1.2 — managed file. Do not edit here.
 # Repo-specific config goes in .claude/settings.local.json (KEEL_TEST_CMD).
 #
 # Stop hook. Exit 2 refuses the agent's finish and feeds stderr back to it.

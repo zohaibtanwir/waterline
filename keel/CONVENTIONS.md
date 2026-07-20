@@ -1,4 +1,4 @@
-<!-- KEEL v0.1.1 — managed file. Do not edit here.
+<!-- KEEL v0.1.2 — managed file. Do not edit here.
      Repo-specific rules go in the "## This repo" section of CLAUDE.md.
      Direct edits are overwritten on the next Keel upgrade. -->
 
