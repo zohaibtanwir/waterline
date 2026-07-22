@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.6 — mint → inject → exec → harvest → destroy
-# New in v0.6:
+# waterline sandbox runner v0.7 — mint → inject → exec → harvest → destroy
+# New in v0.7:
+#   - num_turns lifted from the agent report into the result record (the turn
+#     count is the context-cost multiplier; needed for exploration autopsies).
+#   - Spend query hardened against the async gateway ledger: wait, then poll
+#     briefly while the ledger still reads zero. Reduces (does not eliminate)
+#     under-reporting on short runs; model_usage remains the cross-check.
+# v0.6 (retained):
 #   - Harvest lifts modelUsage from the agent report into the result record:
 #     "model" (first model key, e.g. an alias like "execute" or a concrete
 #     model name) and "model_usage" (the full per-model token/cost object).
@@ -112,14 +118,23 @@ REPORT_PATH="$OUT/claude-output.json"
 SUMMARY=""
 MODEL="unknown"
 MODEL_USAGE="{}"
+NUM_TURNS=0
 if [ -f "$REPORT_PATH" ]; then
   SUMMARY=$(jq -r '.result // empty' "$REPORT_PATH" 2>/dev/null | head -c 200 || true)
   MODEL=$(jq -r '.modelUsage | keys[0] // "unknown"' "$REPORT_PATH" 2>/dev/null || echo unknown)
   MODEL_USAGE=$(jq -c '.modelUsage // {}' "$REPORT_PATH" 2>/dev/null || echo '{}')
+  NUM_TURNS=$(jq -r '.num_turns // 0' "$REPORT_PATH" 2>/dev/null || echo 0)
 fi
 
-SPEND=$(curl -s -X GET "$GATEWAY_URL/key/info?key=$VKEY" \
-  -H "Authorization: Bearer $GATEWAY_MASTER_KEY" | jq -r '.info.spend // 0' 2>/dev/null || echo 0)
+# v0.7: the spend ledger is asynchronous — wait, then poll while it reads zero
+sleep 10
+SPEND=0
+for _try in 1 2 3 4; do
+  SPEND=$(curl -s -X GET "$GATEWAY_URL/key/info?key=$VKEY" \
+    -H "Authorization: Bearer $GATEWAY_MASTER_KEY" | jq -r '.info.spend // 0' 2>/dev/null || echo 0)
+  [ "$SPEND" != "0" ] && [ "$SPEND" != "null" ] && break
+  sleep 5
+done
 
 STATUS=completed
 [ $EXIT -eq 124 ] && STATUS=timeout
@@ -136,6 +151,7 @@ jq -n \
   --arg budget "$BUDGET" \
   --arg mount "$MOUNT_MODE" \
   --arg model "$MODEL" \
+  --arg num_turns "$NUM_TURNS" \
   --argjson model_usage "$MODEL_USAGE" \
   --arg diff_path "$DIFF_FILE" \
   --arg report_path "$REPORT_PATH" \
@@ -146,6 +162,7 @@ jq -n \
     changed_files:($changed_files|tonumber),
     spend_usd:($spend|tonumber), budget_usd:($budget|tonumber),
     mount:$mount, model:$model, model_usage:$model_usage,
+    num_turns:($num_turns|tonumber),
     diff_path:$diff_path,
     report_path:$report_path, summary:$summary, workdir:$workdir}' \
   > "$RESULT"
