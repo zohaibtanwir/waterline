@@ -18,16 +18,22 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # Claude Code — version DECLARED at build
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
-# Project dependency managers — versions DECLARED at build.
-# uv: standalone installer, pinned, to a system path. pnpm: via corepack (Node
-# is already present). Both verified so a bad pin fails the build, not a run.
+# Project dependency managers — versions DECLARED at build and ASSERTED.
+# uv: standalone installer, pinned, to a system path.
+# pnpm: npm -g, which installs the exact version (corepack resolves forward and
+# silently ignores the pin — observed 11.15.1 requested, 11.16.0 installed).
+# Both versions are compared, not merely printed: a drifted pin fails the BUILD.
 RUN curl -fsSL --proto '=https' --tlsv1.2 \
       https://releases.astral.sh/github/uv/releases/download/${UV_VERSION}/uv-installer.sh \
       | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh \
-    && uv --version \
-    && corepack enable \
-    && corepack prepare pnpm@${PNPM_VERSION} --activate \
-    && pnpm --version
+    && npm install -g pnpm@${PNPM_VERSION} \
+    && got_uv="$(uv --version | awk '{print $2}')" \
+    && got_pnpm="$(pnpm --version)" \
+    && echo "uv=$got_uv pnpm=$got_pnpm" \
+    && [ "$got_uv" = "${UV_VERSION}" ] \
+         || { echo "PIN MISMATCH uv: asked ${UV_VERSION}, got $got_uv" >&2; exit 1; } \
+    && [ "$got_pnpm" = "${PNPM_VERSION}" ] \
+         || { echo "PIN MISMATCH pnpm: asked ${PNPM_VERSION}, got $got_pnpm" >&2; exit 1; }
 
 # Governance floor, baked read-only
 COPY managed-settings.json /etc/claude-code/managed-settings.json
