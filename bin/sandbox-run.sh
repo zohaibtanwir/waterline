@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.7 — mint → inject → exec → harvest → destroy
-# New in v0.7:
+# waterline sandbox runner v0.8 — mint → inject → exec → harvest → destroy
+# New in v0.8:
+#   - Image is a task-spec field ("image", default sandbox-base:v1) and is
+#     recorded in the result record. The image is an experiment variable now
+#     that it carries project toolchains (uv, pnpm), so a run must say which
+#     one it used rather than leaving it implicit in this script.
+# v0.7 (retained):
 #   - num_turns lifted from the agent report into the result record (the turn
 #     count is the context-cost multiplier; needed for exploration autopsies).
 #   - Spend query hardened against the async gateway ledger: wait, then poll
@@ -34,6 +39,7 @@ MEM=$(jq -r '.caps.memory // "2g"' "$TASK_FILE")
 CPUS=$(jq -r '.caps.cpus // "2"' "$TASK_FILE")
 BUDGET=$(jq -r '.caps.budget_usd // 1' "$TASK_FILE")
 MOUNT_MODE=$(jq -r '.mount // "rw"' "$TASK_FILE")   # "ro" for analyze-only tasks
+IMAGE=$(jq -r '.image // "waterline/sandbox-base:v1"' "$TASK_FILE")
 
 # v0.5: per-task env from spec → docker -e flags
 ENV_FLAGS=()
@@ -72,7 +78,7 @@ chown -R 1001:1001 "$WORK/repo" "$OUT"
 REPO_MOUNT="$WORK/repo:/workspace/repo"
 [ "$MOUNT_MODE" = "ro" ] && REPO_MOUNT="$REPO_MOUNT:ro"
 
-echo "[$TASK_ID] create+exec: sandbox up (timeout ${TIMEOUT_S}s, mem $MEM, cpus $CPUS, extra env: $(( ${#ENV_FLAGS[@]} / 2 )))"
+echo "[$TASK_ID] create+exec: $IMAGE (timeout ${TIMEOUT_S}s, mem $MEM, cpus $CPUS, extra env: $(( ${#ENV_FLAGS[@]} / 2 )))"
 START=$(date -u +%s)
 set +e
 timeout "${TIMEOUT_S}s" docker run --name "$CN" \
@@ -84,7 +90,7 @@ timeout "${TIMEOUT_S}s" docker run --name "$CN" \
   ${ENV_FLAGS[@]+"${ENV_FLAGS[@]}"} \
   -v "$REPO_MOUNT" \
   -v "$OUT:/workspace/out" \
-  waterline/sandbox-base:v0 \
+  "$IMAGE" \
   bash -lc "cd /workspace/repo && claude -p \"\$TASK_PROMPT\" --output-format json --dangerously-skip-permissions > /workspace/out/claude-output.json 2>/workspace/out/claude-stderr.log" \
   2>"$WORK/docker.log"
 EXIT=$?
@@ -150,6 +156,7 @@ jq -n \
   --arg spend "$SPEND" \
   --arg budget "$BUDGET" \
   --arg mount "$MOUNT_MODE" \
+  --arg image "$IMAGE" \
   --arg model "$MODEL" \
   --arg num_turns "$NUM_TURNS" \
   --argjson model_usage "$MODEL_USAGE" \
@@ -161,7 +168,7 @@ jq -n \
     base_sha:$base_sha, duration_seconds:($duration|tonumber),
     changed_files:($changed_files|tonumber),
     spend_usd:($spend|tonumber), budget_usd:($budget|tonumber),
-    mount:$mount, model:$model, model_usage:$model_usage,
+    mount:$mount, image:$image, model:$model, model_usage:$model_usage,
     num_turns:($num_turns|tonumber),
     diff_path:$diff_path,
     report_path:$report_path, summary:$summary, workdir:$workdir}' \
