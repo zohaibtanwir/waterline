@@ -1,6 +1,12 @@
 # Waterline — architecture
 
-Living document. Updated at the close of each layer. Current as of **L3 close (20 Jul 2026)**.
+Living document. Updated at the close of each layer. Current as of **L3 reconciliation (22 Jul 2026)**.
+
+> **22 Jul reconciliation.** A trust-dialog defect discovered during the first
+> L4 run showed that Keel's `settings.json` was never applied in ANY sandbox
+> run. Claims in the L3 section that rested on it have been re-marked against
+> the artifacts that actually prove them. See failure-log #13. Every claim below
+> now carries its evidence or is explicitly marked unverified.
 
 > Maintenance rule: this file is a close-out deliverable. At each layer's close,
 > update the diagram, the component status table, and the file trees to match
@@ -135,24 +141,42 @@ import plus a merge — upgrades are file swaps, never re-derivation. Backflow
 is governed by the promotion test (true on 2+ repos; mechanism not codebase
 fact; displaces something).
 
-### The two walls
+### The two walls (corrected 22 Jul)
 
-Protection is layered and was probe-verified on both doors:
+Protection is layered. What each layer is proven to do — and by which artifact:
 
-- **Permission rules** bind interactively AND in headless skip-permissions
-  runs — including Bash-redirect inspection against file-deny rules — when
-  the pattern is valid. An invalid pattern is silently ignored (failure-log
-  #12): a deny is not deployed until a probe has watched it refuse.
+- **The image's managed settings** (`/etc/claude-code/managed-settings.json`,
+  baked read-only, requires no workspace trust) — **VERIFIED.** This is what
+  refused the absolute-path Write and the Bash redirect in probe
+  target-keel-06. Its deny list covers `.env`/secret reads, `rm -rf /*`,
+  force-push, and curl-pipe-to-shell. Evidence: run 06 result record plus this
+  file's own contents.
 - **The container boundary** (ro/scoped mounts, unmounted scratch, allowlist
-  network) held in every run, including the five during which the config wall
-  was silently absent. The walls fail independently; that is why there are two.
+  network) — **VERIFIED.** Held in every run, including all seven in which the
+  repo-level config layer was silently absent.
+- **Keel's repo-level `settings.json`** — **UNVERIFIED IN SANDBOX RUNS.**
+  Claude Code refused to load it in every run to date: *"Ignoring 10
+  permissions.allow entries from .claude/settings.json: this workspace has not
+  been trusted"* (present in the stderr of all seven sandbox runs). Its
+  allow-list, deny-list, and hook registration therefore did nothing. The
+  interactive Door-1 test on 20 Jul DID show an absolute-path Write denied with
+  no prompt — but that session was trusted, so it verifies the interactive path
+  only.
+
+The surviving caution from failure-log #12 stands and is now doubly earned:
+**an invalid pattern is silently ignored, and an untrusted settings file is
+silently ignored.** A deny you have only read is a deny you do not have.
 
 ### Done means verified
 
 - The Stop gate (`require-green.sh`) refuses the agent's finish on a red
   suite (exit 2), allows one retry, then releases loudly as UNVERIFIED.
-  All three branches observed in production; every firing audited to
-  /workspace/out/keel-gate.log.
+  All three branches were observed in production and every firing is audited
+  to /workspace/out/keel-gate.log — **the behaviour is verified; the
+  registration path is not.** The hook is declared in Keel's `settings.json`,
+  which was never loaded (see two walls). How it reached the agent is an open
+  question, and the answer changes whether the gate travels with the repo or
+  with the image.
 - The diff is the deliverable: a fix that lives only in the disposable
   environment does not count (rule added in v0.1.1 after run 03 produced
   green tests with an empty diff).
@@ -164,12 +188,26 @@ Protection is layered and was probe-verified on both doors:
 
 ### Tier routing
 
-One line in the task spec — `"env": {"ANTHROPIC_MODEL": "execute"}` — routes
-through the L2 gateway aliases. Honest economics from the A/B: a durable fix
-on the execute tier cost $0.78/390s vs $0.99/243s on the plan tier — 21%
-cheaper, 60% slower. Tier economics are per-task-type, not per-model; the
-gateway ledger is the only quotable cost (agent-side pricing is unreliable
-with aliases, and the ledger itself under-reports on sub-15s runs — see
+One line in the task spec — `"env": {"ANTHROPIC_MODEL": "execute"}` — reaches
+the L2 gateway aliases. **VERIFIED, PARTIAL.** The alias resolves correctly
+(`execute` -> `anthropic/claude-sonnet-4-6` in the gateway config) and runs
+target-keel-05 and -06 recorded a single `execute` key in `model_usage`.
+
+**The control is not total.** The gateway also exposes pass-through entries
+mapping the literal model strings Claude Code requests (`claude-opus-4-8` and
+siblings) straight to real models — added at L2 so sandbox behaviour kept
+working. Any call the CLI issues under its own model string therefore bypasses
+the tier and is served anyway. Run target-tc-01 shows both an `execute` entry
+and a `claude-opus-4-8[1m]` entry in one run, with no fallback message in
+stderr. `ANTHROPIC_MODEL` steers; it does not constrain.
+
+**The A/B economics are UNVERIFIABLE.** The $0.78-vs-$0.99 comparison
+(runs 03/04) predates `model_usage` harvesting — those result records carry no
+model evidence at all, so whether either run stayed on tier cannot be
+established. The numbers are withdrawn pending a re-run with evidence.
+
+The gateway ledger remains the only quotable cost (agent-side pricing is
+unreliable with aliases, and the ledger under-reports on sub-15s runs — see
 deferred: async spend ledger).
 
 ### Evidence (runs 01-06)
@@ -181,21 +219,40 @@ deferred: async spend ledger).
 | 03 | Does tier routing work? | Yes — and exposed the ephemeral-fix loophole (green, empty diff) |
 | 04 | Does the durability rule close it? | Yes — same fix as Opus, in the tree, $0.78 (Sonnet) |
 | 05 | Does the write-deny hold? | No — invalid pattern silently ignored; container held |
-| 06 | Does the corrected deny hold? | Yes — Write AND Bash redirect denied, recorded |
+| 06 | Does the corrected deny hold? | Yes — but the refusal came from the IMAGE's managed settings, not Keel's (corrected 22 Jul) |
+| tc-01 | L4 baseline on a real repo | VOID — budget exhausted at $2.22/1198s; measured a harness whose settings were never loaded |
 
 ### Exit gates (all met)
 
-1. Keel installed in a real target; a genuine pre-existing bug fixed under
-   its rules with the diff as deliverable.
-2. Every harness mechanism verified by direct probe on both doors — zero
-   claims resting on inference.
-3. Tier routing wired end to end with measured economics.
-4. Context budget mechanically enforced.
-5. Paper trail current: change-log, failure-log (#10-12), deferred register,
-   Keel changelog v0.1 -> v0.1.3.
+Re-marked 22 Jul. L3 remains closed — the layer's substance stands — but two
+gates were overstated when they were declared, and are restated here truthfully.
+
+1. **MET.** Keel installed in a real target; a genuine pre-existing bug fixed
+   under its rules with the diff as deliverable (runs 01, 04).
+2. **NOT MET AS STATED.** The original wording — "every harness mechanism
+   verified by direct probe on both doors, zero claims resting on inference" —
+   was false. The probes verified *outcomes* (a write was refused, a gate
+   fired) without verifying *which layer produced them*. Keel's repo-level
+   settings remain unverified in sandbox runs. Corrected scope: the image's
+   managed settings and the container boundary are verified; Keel's
+   `settings.json` is not.
+3. **PARTIALLY MET.** Tier routing reaches the gateway (verified); tier
+   *control* is partial (pass-through bypass) and the economics are withdrawn.
+4. **MET.** Context budget mechanically enforced (`bin/check-budget.sh`,
+   exercised on both targets).
+5. **MET.** Paper trail current: change-log, failure-log (#10-13), deferred
+   register, Keel changelog.
 
 ### Carried forward (open by choice, with triggers — see docs/deferred.md)
 
+- **Workspace trust (blocking).** Claude Code ignores repo-level
+  `.claude/settings.json` unless the workspace is trusted. Fix belongs in the
+  image (`hasTrustDialogAccepted` for `/workspace/repo` in the agent's
+  `.claude.json`), since it is environment state, not repo state. Until then
+  Keel ships four files of which only `CONVENTIONS.md` (imported by CLAUDE.md)
+  and the budget script demonstrably function.
+- Re-verification after the trust fix: Keel's own deny rules, and the Stop
+  gate's registration path.
 - Verifier invocation evidence (checklist complete; no run has yet required
   the verifier).
 - L3/L5 skills boundary (decides with the org-evolution research pass).

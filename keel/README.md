@@ -1,4 +1,4 @@
-# Keel v0.1.3
+# Keel v0.1.4
 
 The base layer of an agentic engineering harness. Versioned, shipped into a
 target repo, and not edited there.
@@ -17,29 +17,36 @@ CLAUDE.md, settings.local.json, or .mcp.json.
 | `agents/verifier.md` | Adversarial diff check — the full 11-shortcut catalogue. |
 | `bin/check-budget.sh` | Counts assembled standing context; warns at 250 lines, fails at 300. |
 
-## The two walls
+## The two walls (corrected 22 Jul)
 
-Keel's protections live in two layers. Both are real, they guard different
-doors, and they fail differently:
+Keel's protections live in layers that guard different doors and fail
+differently. Each is marked with what actually proves it.
 
-**Permission rules** (`settings.json`) are live on BOTH doors — verified by
-probe on each. An interactive session denied an absolute-path Write outright,
-no prompt (Door 1 test, 20 Jul). A headless sandbox run under a
-permission-skipping flag denied the same Write AND a Bash redirect aimed at
-the denied path — the permission layer inspects redirect targets inside shell
-commands (probe target-keel-06). Deny rules bind, in both modes, **when the
-pattern is valid.**
+**Keel's permission rules** (`settings.json`) — **live on Door 1, UNVERIFIED
+on Door 2.** An interactive session denied an absolute-path Write outright with
+no prompt (Door 1 test, 20 Jul). In sandbox runs, Claude Code has refused to
+load this file every time: *"Ignoring 10 permissions.allow entries from
+.claude/settings.json: this workspace has not been trusted"* appears in the
+stderr of all seven runs to date. Until the workspace-trust fix ships, assume
+this file does nothing in headless runs.
 
-The caution that survives: **an invalid pattern is silently ignored, not
-rejected.** v0.1 shipped `Write(/**)` — one slash short of the absolute form
-`//**` — and received no protection and no warning for five runs. Validate
-every deny rule with a probe after writing it; a deny you have only read is a
-deny you do not have.
+**The image's managed settings** (`/etc/claude-code/managed-settings.json`,
+outside this repo, no trust required) — **VERIFIED on Door 2.** This is what
+refused the Write and the Bash redirect in probe target-keel-06; that result
+was originally and wrongly credited to the file above.
 
-**The container boundary** — read-only or scoped repo mounts, unmounted
-scratch that dies at destroy, allowlist-only network — held in every probe,
-including the five runs when the config wall was silently absent. That is the
-argument for two walls: they fail independently.
+**The container boundary** — scoped mounts, unmounted scratch that dies at
+destroy, allowlist-only network — **VERIFIED.** Held in every run, including
+all seven in which the repo-level config layer was silently absent. That is the
+argument for layered walls: they fail independently, and one of them was
+failing the whole time.
+
+The caution, now earned twice: **an invalid pattern is silently ignored, and an
+untrusted settings file is silently ignored.** v0.1 shipped `Write(/**)` — one
+slash short of `//**` — with no protection and no warning for five runs; the
+corrected pattern then sat in a file nobody was reading. Validate a rule by
+watching it refuse, and confirm which layer refused. A deny you have only read
+is a deny you do not have.
 
 ## Install
 
@@ -98,6 +105,12 @@ is running.
 
 ## Changes
 
+- **v0.1.4** — documentation correction, no behaviour change. Two-walls section
+  and the verified list re-marked after discovering that `settings.json` has
+  never been loaded in a sandbox run (workspace trust); headless deny
+  verification reattributed to the image's managed settings; tier-routing
+  control marked partial. Nothing here was demoted for being wrong in
+  substance — only for having been credited to the wrong layer.
 - **v0.1.3** — two-walls section rewritten after probe target-keel-06: deny
   rules verified to bind on both doors, including Bash-redirect inspection;
   the true run-05 failure was an invalid pattern silently ignored, not a
@@ -110,23 +123,31 @@ is running.
 
 ## Verified so far
 
-- Deny rules: absolute-path Write refused interactively with no prompt
-  (Door 1), and refused in a headless skip-permissions sandbox for both the
-  Write tool and a Bash redirect, with the Bash denial recorded in
-  permission_denials (target-keel-06).
-- Stop gate: all three production branches observed — refuse on red with one
-  retry then loud release (target-keel-02), pass on green (target-keel-04),
-  loud nag when unconfigured (target-keel-05). Every firing is in
-  `keel-gate.log`.
+- Deny rules (Door 1 only): absolute-path Write refused interactively with no
+  prompt, 20 Jul. The headless refusals in target-keel-06 came from the image's
+  managed settings, not from this file — see "The two walls".
+- Stop gate behaviour: all three production branches observed — refuse on red
+  with one retry then loud release (target-keel-02), pass on green
+  (target-keel-04), loud nag when unconfigured (target-keel-05). Every firing
+  is in `keel-gate.log`. The behaviour is verified; how the hook was registered
+  is not, since the settings file declaring it was never loaded.
 - Full pipeline: real bug fixed under the rules, cause not tests, diff in the
   working tree (target-keel-01, -04).
-- Tier routing via task-spec env reaches the gateway aliases; the result
-  record self-reports the model (target-keel-03 through -06).
+- Tier routing reaches the gateway aliases and the result record self-reports
+  the model (target-keel-05, -06 — single `execute` key each). Control is
+  partial: gateway pass-through entries let CLI-issued model strings bypass the
+  tier, observed in target-tc-01.
 - Container boundary held in every probe, including while the config wall was
   silently absent.
 
 ## Known open
 
+- **Workspace trust (blocking).** Repo-level settings are ignored unless the
+  workspace is trusted. The fix is environment state — `hasTrustDialogAccepted`
+  for the workspace path in the agent's `.claude.json`, baked into the image —
+  not something this repo can carry. Until it ships, of the five files here
+  only `CONVENTIONS.md` (imported by CLAUDE.md) and `bin/check-budget.sh` are
+  demonstrably doing anything in a sandbox.
 - Verifier invocation: the checklist is complete, but no run has yet shown the
   verifier being invoked. Needs a task that requires it and an
   invocation-evidence channel.

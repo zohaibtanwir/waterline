@@ -102,6 +102,34 @@ against a verified identity rather than trusting the key handoff.
 
 ## From L3 — harness
 
+### Workspace trust — repo settings are ignored until it is set
+**What.** Claude Code refuses to load `.claude/settings.json` unless the
+workspace has been trusted, printing a warning and continuing. In every sandbox
+run to date this silently disabled Keel's allow-list, deny-list, and hook
+registration.
+**Why.** It is the difference between Keel being a harness and Keel being four
+files that only look like one. It also invalidated part of L3's evidence base
+(failure-log #13).
+**The fix.** Environment state, so it belongs in the image, not the repo:
+`projects["/workspace/repo"].hasTrustDialogAccepted: true` in the agent user's
+`.claude.json`, baked at build. Then re-probe what the file actually does.
+**Trigger.** FIRED — blocking. Next image touch, before any further sandbox
+run whose result depends on repo-level settings.
+
+### Tier control is partial — gateway pass-through bypasses the alias
+**What.** The gateway config maps tier aliases (`plan`/`execute`/`verify`) AND
+pass-through entries for the literal model strings Claude Code requests. A call
+issued under a CLI-chosen model string therefore bypasses `ANTHROPIC_MODEL`
+entirely and is served anyway. Observed in target-tc-01: one run, two model
+entries, no fallback message in stderr.
+**Why.** Every tier-economics claim assumes the alias constrains the whole run.
+It does not. Removing pass-through would make the constraint total — and would
+also break any sandbox behaviour that depends on requesting a specific model,
+which is why it was added at L2 in the first place. That trade needs deciding,
+not assuming.
+**Trigger.** Before any published cost-per-tier number. The re-run of the
+withdrawn A/B is the natural moment.
+
 ### The loop runner
 **What.** Keel defines the floor; the loop runs on top of it. The standalone
 Plan→Act→Verify runner — fresh context each iteration, state on disk in a goal

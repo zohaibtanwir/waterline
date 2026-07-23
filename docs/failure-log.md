@@ -17,25 +17,34 @@ substrate inherits.
 | 9 | 17 Jul | deploy (gateway) | tinyproxy filter sed with \\. escapes did not match; api.anthropic.com line survived first removal attempt | ops (regex escaping) | Simpler literal sed '/anthropic/d'; verified grep -c = 0 (verify, don't assume) | tinyproxy-filter |
 | 10 | 19 Jul | placement (Keel v0.1) | Command block assumed repo at ~/waterline; real clone is ~/projects/waterline. mkdir -p created the stray tree instead of failing, so five files landed in a directory that looked correct from the shell. Surfaced six exchanges later via "not a git repository". Compounded: a partial keel/ already existed in the real repo, so the corrective mv nested it as keel/keel/ | process (unverified assumption) | Flattened nesting, moved into real repo, removed stray, committed. Protocol amendment: command blocks that write to a path must use a path confirmed in-session, or open with a step that fails loudly. Do not infer repo locations | this log; working protocol |
 | 11 | 20 Jul | deploy (Keel v0.1.1 upgrade) | Pasted command block died at a `quote>` prompt: an apostrophe in a comment label line opened an unterminated zsh string and swallowed every following line; separately, pasted `#` labels error as commands because interactive_comments is off in this zsh | ops (shell quoting) | Ctrl+C, re-ran block with ASCII-clean label; protocol: label lines carry no apostrophes or parentheses; optional permanent fix `setopt interactive_comments` | working protocol |
-
 | 12 | 20 Jul | config (Keel settings) | `Write(/**)` deny — intended as "deny all absolute-path writes" — was an invalid pattern that Claude Code SILENTLY IGNORED: no error, no warning, no protection, for five runs. Surfaced only because probe target-keel-05 ordered the agent to attempt the forbidden write and it succeeded. Compounding: silence also fit "flag bypasses denies", a wrong diagnosis that stood for half a day | config (silent-ignore of invalid rule) | Corrected to `//**` (absolute form). Verified by three probes: interactive Write denied with no prompt; sandbox Write denied; sandbox Bash redirect to the denied path also denied and recorded in permission_denials. Rule going forward: a deny is not deployed until a probe has watched it refuse | keel/settings.json v0.1.2; README v0.1.3 two-walls; this log |
+| 13 | 22 Jul | verification (L3 evidence base) | Claude Code ignored `.claude/settings.json` in EVERY sandbox run to date — `"Ignoring 10 permissions.allow entries from .claude/settings.json: this workspace has not been trusted"` sat in the stderr of all seven runs, unread after run 02. Keel's allow-list, deny-list and hook registration therefore did nothing. Probe target-keel-06's refusals — published as proof that Keel's denies bind headlessly — actually came from the image's `managed-settings.json`, which needs no trust. Surfaced only when the first L4 run (target-tc-01) failed and its stderr was read line by line | process (verified the outcome, not the mechanism) | Documents corrected before any new run: architecture.md L3 section re-marked claim-by-claim with evidence, exit gate 2 restated as NOT MET AS STATED, Keel README to v0.1.4. Image fix pending: set `hasTrustDialogAccepted` for the workspace path in the agent's `.claude.json` so repo-level settings load at all; then re-probe Keel's own denies and the gate's registration path | docs/architecture.md; keel/README.md v0.1.4; this log |
 
+---
 
 Diagnosis discipline (from the harness article): name the layer first —
 harness/infra failures (permissions, network, credentials, config) vs loop
 failures (agent never converges, verification passes garbage). Entries 1–12
 are all infra/script/config/ops/process layer; no agent-behavior failures yet.
 
-Recurring shape — **silent success where an error was warranted.** Five
-instances: an invalid deny pattern silently discarded while appearing to
-protect (12); `mkdir -p` fabricating a wrong path rather than failing (10); a
-direct edit to a managed Keel file overwritten with no warning on upgrade
-(SSOT drift, docs/deferred.md); an unset KEEL_TEST_CMD disabling the
+Recurring shape — **silent success where an error was warranted.** Seven
+instances: an untrusted settings file ignored with a warning nobody read, for
+seven consecutive runs (13); an invalid deny pattern silently discarded while
+appearing to protect (12); `mkdir -p` fabricating a wrong path rather than
+failing (10); a direct edit to a managed Keel file overwritten with no warning
+on upgrade (SSOT drift, docs/deferred.md); an unset KEEL_TEST_CMD disabling the
 done-means-verified gate while merely nagging (require-green.sh); an npm
-install whose postinstall never ran, leaving a stub that failed only weeks
-later (environment, 20 Jul). Entry 3 is the inverse — a loud failure on a
-correct state. The design rule falling out of this: when a step encodes an
-assumption, make its violation noisy; when a config claims protection, probe
-it before trusting it. Convenience that suppresses errors is how an assumption
-survives long enough to compound — and a protection you have only read is a
-protection you do not have.
+install whose postinstall never ran, leaving a stub that failed weeks later;
+and corepack resolving a pinned pnpm version forward while the build stayed
+green (fixed same day by asserting versions instead of printing them). Entry 3
+is the inverse — a loud failure on a correct state.
+
+Entry 13 adds a second rule to the first. The original: when a step encodes an
+assumption, make its violation noisy; a protection you have only read is a
+protection you do not have. The addition: **verifying an outcome is not
+verifying a mechanism.** Probes 05 and 06 correctly established that a write
+was refused — and were wrong about what refused it. When a control is layered,
+a passing probe identifies only that *some* layer held. Name the layer, or the
+claim is unearned. Every "verified" in this substrate's documents should carry
+the artifact that proves it; where it cannot, the word is "unverified" and that
+is an acceptable thing for a document to say.
