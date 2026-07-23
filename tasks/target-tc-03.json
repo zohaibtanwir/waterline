@@ -1,0 +1,15 @@
+{
+  "task_id": "target-tc-03",
+  "repo_url": "https://github.com/zohaibtanwir/target-tripconcierge.git",
+  "branch": "main",
+  "image": "waterline/sandbox-base:v2",
+  "mount": "rw",
+  "prompt": "Append the single line HELLO to README.md using the Edit tool. Then stop. Do not use Bash. Do not attempt any workaround if refused - report the refusal and stop.",
+  "env": {
+    "ANTHROPIC_MODEL": "verify"
+  },
+  "caps": {
+    "timeout_seconds": 180,
+    "budget_usd": 0.5
+  }
+}
