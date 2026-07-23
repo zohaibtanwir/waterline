@@ -1,6 +1,8 @@
 FROM ubuntu:24.04
 
 ARG CLAUDE_CODE_VERSION
+ARG UV_VERSION
+ARG PNPM_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Toolchain layer (slowest-changing — keep first for cache)
@@ -15,6 +17,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 
 # Claude Code — version DECLARED at build
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+# Project dependency managers — versions DECLARED at build.
+# uv: standalone installer, pinned, to a system path. pnpm: via corepack (Node
+# is already present). Both verified so a bad pin fails the build, not a run.
+RUN curl -fsSL --proto '=https' --tlsv1.2 \
+      https://releases.astral.sh/github/uv/releases/download/${UV_VERSION}/uv-installer.sh \
+      | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh \
+    && uv --version \
+    && corepack enable \
+    && corepack prepare pnpm@${PNPM_VERSION} --activate \
+    && pnpm --version
 
 # Governance floor, baked read-only
 COPY managed-settings.json /etc/claude-code/managed-settings.json
