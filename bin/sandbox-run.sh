@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.8 — mint → inject → exec → harvest → destroy
-# New in v0.8:
+# waterline sandbox runner v0.9 — mint → inject → exec → harvest → destroy
+# New in v0.9:
+#   - Trust preflight: asserts the image marks /workspace/repo as trusted
+#     before spending anything. Without trust Claude Code silently ignores the
+#     repo's .claude/settings.json — which disabled Keel in every run up to
+#     22 Jul (failure-log #13). A run on an untrusted image is a run whose
+#     harness does nothing, so it must not start.
+#   - Harvest greps the agent's stderr for the trust warning and records
+#     settings_loaded in the result record. Belt and braces: the preflight can
+#     pass and the warning can still appear if the mount path ever changes.
+# v0.8 (retained):
 #   - Image is a task-spec field ("image", default sandbox-base:v1) and is
 #     recorded in the result record. The image is an experiment variable now
 #     that it carries project toolchains (uv, pnpm), so a run must say which
@@ -46,6 +55,16 @@ ENV_FLAGS=()
 while IFS= read -r kv; do
   [ -n "$kv" ] && ENV_FLAGS+=(-e "$kv")
 done < <(jq -r '.env // {} | to_entries[] | "\(.key)=\(.value)"' "$TASK_FILE")
+
+# v0.9: refuse to run on an image that has not marked the workspace trusted
+TRUST_OK=$(docker run --rm "$IMAGE" bash -lc \
+  'node -e "try{const c=require(\"/home/agent/.claude.json\");console.log(c.projects[\"/workspace/repo\"].hasTrustDialogAccepted===true?\"yes\":\"no\")}catch(e){console.log(\"no\")}"' 2>/dev/null || echo no)
+if [ "$TRUST_OK" != "yes" ]; then
+  echo "FATAL: $IMAGE does not mark /workspace/repo as trusted." >&2
+  echo "Claude Code would ignore the repo's .claude/settings.json and the" >&2
+  echo "harness would silently do nothing. Rebuild the image (see failure-log #13)." >&2
+  exit 3
+fi
 
 GATEWAY_URL="http://100.98.245.52:4000"
 GATEWAY_MASTER_KEY=$(cat /opt/waterline/gateway-master.key)
@@ -132,6 +151,13 @@ if [ -f "$REPORT_PATH" ]; then
   NUM_TURNS=$(jq -r '.num_turns // 0' "$REPORT_PATH" 2>/dev/null || echo 0)
 fi
 
+# v0.9: did Claude Code actually load the repo's settings this run?
+SETTINGS_LOADED=true
+if grep -q "has not been trusted" "$OUT/claude-stderr.log" 2>/dev/null; then
+  SETTINGS_LOADED=false
+  echo "[$TASK_ID] WARNING: repo settings were IGNORED (workspace not trusted)" >&2
+fi
+
 # v0.7: the spend ledger is asynchronous — wait, then poll while it reads zero
 sleep 10
 SPEND=0
@@ -157,6 +183,7 @@ jq -n \
   --arg budget "$BUDGET" \
   --arg mount "$MOUNT_MODE" \
   --arg image "$IMAGE" \
+  --argjson settings_loaded "$SETTINGS_LOADED" \
   --arg model "$MODEL" \
   --arg num_turns "$NUM_TURNS" \
   --argjson model_usage "$MODEL_USAGE" \
@@ -168,7 +195,7 @@ jq -n \
     base_sha:$base_sha, duration_seconds:($duration|tonumber),
     changed_files:($changed_files|tonumber),
     spend_usd:($spend|tonumber), budget_usd:($budget|tonumber),
-    mount:$mount, image:$image, model:$model, model_usage:$model_usage,
+    mount:$mount, image:$image, settings_loaded:$settings_loaded, model:$model, model_usage:$model_usage,
     num_turns:($num_turns|tonumber),
     diff_path:$diff_path,
     report_path:$report_path, summary:$summary, workdir:$workdir}' \

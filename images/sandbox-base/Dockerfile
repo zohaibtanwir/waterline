@@ -45,6 +45,18 @@ USER agent
 WORKDIR /workspace
 RUN git config --global safe.directory '*'
 
+# Workspace trust — WITHOUT THIS, repo-level .claude/settings.json IS IGNORED.
+# Claude Code will not honour project settings in an untrusted workspace: it
+# prints "this workspace has not been trusted" to stderr and continues with the
+# file unread. That silently disabled Keel's permissions and hook registration
+# in every sandbox run up to 22 Jul (failure-log #13). Trust is per-user state,
+# so it is baked here rather than shipped in a repo. The sandbox mounts the
+# target at /workspace/repo; the runner asserts at exec time that the file is
+# still valid and still marks that path as trusted.
+RUN printf '%s\n' '{"projects":{"/workspace/repo":{"hasTrustDialogAccepted":true}}}' \
+      > /home/agent/.claude.json \
+    && node -e "const c=require('/home/agent/.claude.json'); if(c.projects['/workspace/repo'].hasTrustDialogAccepted!==true){console.error('TRUST NOT SET');process.exit(1)}; console.log('workspace trust set for /workspace/repo')"
+
 # All egress via the controller proxy (model API excepted later via NO_PROXY)
 ENV HTTP_PROXY=http://100.98.245.52:8888 \
     HTTPS_PROXY=http://100.98.245.52:8888 \
