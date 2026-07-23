@@ -6,7 +6,7 @@
   "mount": "rw",
   "prompt": "Append the single line HELLO to README.md using the Edit tool. Then stop. Do not use Bash. Do not attempt any workaround if refused - report the refusal and stop.",
   "env": {
-    "ANTHROPIC_MODEL": "verify"
+    "ANTHROPIC_MODEL": "execute"
   },
   "caps": {
     "timeout_seconds": 180,
