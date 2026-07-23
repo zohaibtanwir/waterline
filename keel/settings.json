@@ -1,5 +1,5 @@
 {
-  "_keel": "v0.1.5 — managed file. Do not edit here. Repo-specific settings go in .claude/settings.local.json, which merges with this file.",
+  "_keel": "v0.1.6 — managed file. Do not edit here. Repo-specific settings go in .claude/settings.local.json, which merges with this file.",
   "permissions": {
     "allow": [
       "Read(*)",
@@ -17,6 +17,7 @@
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(./secrets/**)",
+      "Edit(//**)",
       "Bash(rm -rf:*)",
       "Bash(git push:*)",
       "Bash(git reset --hard:*)",
