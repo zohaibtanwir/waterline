@@ -1,6 +1,28 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.9 — mint → inject → exec → harvest → destroy
-# New in v0.9:
+# waterline sandbox runner v0.10 — mint → inject → exec → harvest → destroy
+# New in v0.10:
+#   - Turn-stream capture. The agent now runs with --output-format stream-json
+#     --verbose, writing one JSON object per line to /workspace/out/
+#     claude-stream.jsonl: every tool call with its arguments, every result,
+#     and a leading system/init line listing the tools available at launch.
+#     The summary record we have always harvested is the LAST line of that
+#     stream, so claude-output.json is derived from it and every downstream
+#     parse is unchanged.
+#     Why: the result record answers "what did this run cost and did it
+#     change anything". It cannot answer "which files did the agent open,
+#     what did it re-derive, how many times did it run the tests" — the
+#     questions the L4 exploration autopsy is made of. It also could not
+#     settle target-tc-03, where permission_denials was empty while the agent
+#     narrated a refusal: with the stream, either an Edit tool call is in the
+#     record or it is not.
+#     Derivation is deliberately NOT `tail -1`. On a run killed by the host
+#     timeout the CLI never writes its result line, and tail would grab a
+#     mid-stream object that is valid JSON and parses to nulls — a silent
+#     wrong answer where today we get a caught failure. Selecting the last
+#     line of type "result" yields an empty file instead, so the existing
+#     `// empty` / `// "unknown"` guards fire exactly as they do now.
+#   - stream_path in the result record.
+# v0.9 (retained):
 #   - Trust preflight: asserts the image marks /workspace/repo as trusted
 #     before spending anything. Without trust Claude Code silently ignores the
 #     repo's .claude/settings.json — which disabled Keel in every run up to
@@ -9,6 +31,9 @@
 #   - Harvest greps the agent's stderr for the trust warning and records
 #     settings_loaded in the result record. Belt and braces: the preflight can
 #     pass and the warning can still appear if the mount path ever changes.
+#     NOTE the field is computed by absence of a warning, so it means "no
+#     warning found", not "settings confirmed loaded" — on a fast failure with
+#     empty stderr it reports true.
 # v0.8 (retained):
 #   - Image is a task-spec field ("image", default sandbox-base:v1) and is
 #     recorded in the result record. The image is an experiment variable now
@@ -110,13 +135,29 @@ timeout "${TIMEOUT_S}s" docker run --name "$CN" \
   -v "$REPO_MOUNT" \
   -v "$OUT:/workspace/out" \
   "$IMAGE" \
-  bash -lc "cd /workspace/repo && claude -p \"\$TASK_PROMPT\" --output-format json --dangerously-skip-permissions > /workspace/out/claude-output.json 2>/workspace/out/claude-stderr.log" \
+  bash -lc "cd /workspace/repo && claude -p \"\$TASK_PROMPT\" --output-format stream-json --verbose --dangerously-skip-permissions > /workspace/out/claude-stream.jsonl 2>/workspace/out/claude-stderr.log" \
   2>"$WORK/docker.log"
 EXIT=$?
 set -e
 END=$(date -u +%s)
 
 echo "[$TASK_ID] harvest"
+
+# v0.10: derive the summary record from the last result line of the stream.
+# NOT tail -1 — see the header note on host-timeout kills.
+STREAM_PATH="$OUT/claude-stream.jsonl"
+REPORT_PATH="$OUT/claude-output.json"
+if [ -f "$STREAM_PATH" ]; then
+  STREAM_LINES=$(wc -l < "$STREAM_PATH" | tr -d ' ')
+  grep '"type":"result"' "$STREAM_PATH" 2>/dev/null | tail -1 > "$REPORT_PATH" || true
+  if [ ! -s "$REPORT_PATH" ]; then
+    echo "[$TASK_ID] WARNING: stream has $STREAM_LINES lines but no result record" >&2
+    echo "[$TASK_ID]          (expected if the run was killed by the timeout)" >&2
+  fi
+else
+  echo "[$TASK_ID] WARNING: no turn stream was written" >&2
+fi
+
 DIFF_FILE="$WORK/changes.diff"
 git config --global --add safe.directory "$WORK/repo" >/dev/null 2>&1 || true
 # safety-net excludes: junk that should have died with the container
@@ -139,12 +180,11 @@ git -C "$WORK/repo" diff --cached "$BASE_SHA" > "$DIFF_FILE" || true
 CHANGED=$(git -C "$WORK/repo" diff --cached --name-only "$BASE_SHA" | wc -l | tr -d ' ')
 
 # agent report: path + short summary
-REPORT_PATH="$OUT/claude-output.json"
 SUMMARY=""
 MODEL="unknown"
 MODEL_USAGE="{}"
 NUM_TURNS=0
-if [ -f "$REPORT_PATH" ]; then
+if [ -s "$REPORT_PATH" ]; then
   SUMMARY=$(jq -r '.result // empty' "$REPORT_PATH" 2>/dev/null | head -c 200 || true)
   MODEL=$(jq -r '.modelUsage | keys[0] // "unknown"' "$REPORT_PATH" 2>/dev/null || echo unknown)
   MODEL_USAGE=$(jq -c '.modelUsage // {}' "$REPORT_PATH" 2>/dev/null || echo '{}')
@@ -189,6 +229,7 @@ jq -n \
   --argjson model_usage "$MODEL_USAGE" \
   --arg diff_path "$DIFF_FILE" \
   --arg report_path "$REPORT_PATH" \
+  --arg stream_path "$STREAM_PATH" \
   --arg summary "$SUMMARY" \
   --arg workdir "$WORK" \
   '{task_id:$task_id, status:$status, exit_code:($exit_code|tonumber),
@@ -198,7 +239,7 @@ jq -n \
     mount:$mount, image:$image, settings_loaded:$settings_loaded, model:$model, model_usage:$model_usage,
     num_turns:($num_turns|tonumber),
     diff_path:$diff_path,
-    report_path:$report_path, summary:$summary, workdir:$workdir}' \
+    report_path:$report_path, stream_path:$stream_path, summary:$summary, workdir:$workdir}' \
   > "$RESULT"
 
 echo "[$TASK_ID] destroy: container + revoke virtual key"
