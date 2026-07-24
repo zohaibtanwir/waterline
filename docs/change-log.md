@@ -20,9 +20,6 @@ Distinct from docs/failure-log.md (failures + fixes) and docs/architecture.md
 | 17 Jul | external | Created target repo github.com/zohaibtanwir/target-flaskapp (seeded from aaronjolson/flask-pytest-example, clean history) | L3 proving ground. Deliberately a SEPARATE repo: it is a *target*, not substrate — mirrors the real engagement shape (our IP installs into a client repo). Naming: target-<name>. | N/A — targets are not provisioned |
 | 18 Jul | runner | Deployed sandbox-run.sh v0.4 | Out-mount for agent report; venv/caches to unmounted paths (die with container); harvest excludes; "mount":"ro"\|"rw" task-spec field; result record gains report_path + summary. Fixes failure-log #5. | bin/sandbox-run.sh (repo) |
 | 18 Jul | repo | Task specs are SUBSTRATE — versioned in tasks/, not authored on the box | The "mount":"ro" choice for target-smoke was a deliberate design decision; decisions belong in git, not on a disposable runner | tasks/target-smoke.json |
-Paste these rows at the bottom of the table in docs/change-log.md, directly
-under the 18 Jul "Task specs are SUBSTRATE" row (before the "## Deployment
-model" section):
 | 19 Jul | repo | Keel v0.1 authored in keel/ (CONVENTIONS.md, settings.json, hooks/require-green.sh, agents/verifier.md, README) | L3 harness base layer — versioned substrate IP that installs into target repos | keel/ (repo) |
 | 19 Jul | external | Keel v0.1 installed into target-flaskapp + CLAUDE.md local layer (9e1f7b2) | First install. Layout decision: settings.json + verifier at standard .claude/ discovery paths; conventions + hook nested under .claude/keel/ | Manual — install steps ARE the spec for the future installer (deferred) |
 | 19 Jul | runner | Deployed sandbox-run.sh v0.5 | Per-task "env" object from task spec injected into container — transport for KEEL_TEST_CMD (and later ANTHROPIC_MODEL) without editing managed files | bin/sandbox-run.sh |
@@ -31,6 +28,25 @@ model" section):
 | 20 Jul | repo + external | Keel v0.1.2; target upgraded | Verifier upgraded to full 11-shortcut catalogue (sourced: moonrunnerkc/swarm-orchestrator); deny patterns corrected to //** (absolute form); two-walls README; NEW bin/check-budget.sh (assembled-context budget, soft 250 / hard 300) | keel/; manual upgrade #2 |
 | 20 Jul | repo | Keel v0.1.3 (README only) | Two-walls corrected to verified facts after probe 06: denies bind on both doors incl Bash-redirect inspection; run-05 failure was an invalid pattern silently ignored. Header convention: file headers = last-changed version | keel/README.md |
 | 20 Jul | repo | Tasks target-keel-01..06 versioned in tasks/ | Probes are substrate: each task spec encodes a designed experiment (gate probe, routing A/B, deny probes) and its caps/mount/env decisions | tasks/ |
+| 22 Jul | repo | docs corrected before any new run: architecture.md re-marked claim-by-claim with evidence; exit gate 2 restated as NOT MET AS STATED; tier economics withdrawn; tc-01 added to evidence table as VOID | Trust defect (failure-log #13) invalidated the L3 evidence base. Documents corrected first, on the rule that a wrong claim in a canonical doc costs more than a delayed run | docs/architecture.md; docs/failure-log.md |
+| 22 Jul | repo | Keel v0.1.4 (README only) | Same corrections at the Keel layer: two-walls section rewritten with what proves each wall; honest Known-Open stating that until the trust fix ships only CONVENTIONS.md and check-budget.sh demonstrably function in a sandbox | keel/README.md |
+| 22 Jul | repo | deferred.md +2 entries: workspace trust (trigger FIRED, blocking); tier pass-through trade-off | Both were discovered as blocking findings during the reconciliation and needed triggers before they could be deferred honestly | docs/deferred.md |
+| 22 Jul | runner | Built sandbox-base:v1 | L4 prerequisite: bake deps (uv 0.11.31, pnpm 11.15.1) so the baseline measures codebase-understanding cost, not dependency-install cost. v0 had neither | images/sandbox-base/ |
+| 22 Jul | runner | sandbox-base:v1 rebuilt — corepack replaced with npm install -g pnpm@VERSION; both tool versions now ASSERTED at build, not printed | corepack silently resolved the pnpm pin forward (11.15.1 asked, 11.16.0 got) while the build stayed green — sixth instance of the silent-success failure shape. A drifted pin now fails the BUILD, not a run | images/sandbox-base/Dockerfile |
+| 22 Jul | runner | Built sandbox-base:v2 | Writes /home/agent/.claude.json with projects["/workspace/repo"].hasTrustDialogAccepted=true, asserted at build. This is the fix for failure-log #13 — workspace trust is environment state, so it belongs in the image, not the repo | images/sandbox-base/ |
+| 22 Jul | runner | Deployed sandbox-run.sh v0.7 | num_turns into the result record (needed for the L4 autopsy); hardened spend poll against the async-ledger under-report | bin/sandbox-run.sh |
+| 22 Jul | runner | Deployed sandbox-run.sh v0.9 | TRUST PREFLIGHT: refuses to start (exit 3) on an image that does not mark the workspace trusted. Harvest greps agent stderr for the trust warning and records settings_loaded in the result record — turns a log line nobody read into a field we always read. Default image deliberately left at :v1 so nothing switches silently | bin/sandbox-run.sh |
+| 22 Jul | external | Created target repo github.com/zohaibtanwir/target-tripconcierge (private) | L4 proving ground — a real application rather than a 110-line toy. Seeded from the working tree, secrets scanned (web/.env.local + backend/.env removed), vendored .venv/node_modules pruned. 320 files, 5.8M | N/A — targets are not provisioned |
+| 22 Jul | repo | Keel v0.1.5 then v0.1.6 | Door-1 isolation tests (free, interactive, no API spend) showed Write(//**) is an INVALID form that Claude Code ignores — its own startup warning says only Edit(path) rules are matched by file permission checks. v0.1.5 removed both file-deny lines to isolate; that proved the working-directory boundary only PROMPTS, it does not deny. v0.1.6 restores Edit(//**) as the real enforcing rule and leaves Write(//**) out | keel/settings.json |
+| 23 Jul | repo | Task target-tc-03 authored and versioned | Probe: do Keel's deny rules bite in a sandbox now that settings load. Designed against the image's managed-settings deny list to be DISJOINT from it — the image has no Edit rule, so an Edit refusal can only come from Keel | tasks/target-tc-03.json |
+
+## Paper-trail note (24 Jul)
+
+This log ran three days behind between 20 and 24 Jul while architecture.md and
+failure-log.md were kept current. The log is the running delta between layer
+closes, so a gap here is a gap in the only record of what changed on the boxes
+between two close-out snapshots. Update it in the same commit as the change,
+not at the next layer close.
 
 ## Deployment model (established at L2)
 Two phases with a clean boundary:
