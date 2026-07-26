@@ -1,68 +1,74 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.11 — mint → inject → exec → harvest → destroy
-# New in v0.11:
-#   - LEDGER KILL POLLER. A background loop samples /key/info every 30s for the
-#     whole run, appends {ts, spend} to gateway-spend-timeline.jsonl, and tears
-#     the container down if the LEDGER spend crosses caps.kill_usd.
-#     Why: target-tc-04 died on "429 Budget has been exceeded! Current cost:
-#     5.0, Max budget: 5.0" while its own result record said spend_usd 2.448.
-#     /spend/logs later agreed with 2.448 to nine decimal places, as did the
-#     Console delta. Nothing in the ledger ever reached 5.0, so the gateway's
-#     ENFORCEMENT counter and its LEDGER are two different numbers and only the
-#     ledger has ever been right. This makes the ledger the cap: poll the number
-#     that has been correct every time, and set caps.budget_usd high enough that
-#     the broken counter cannot trip first.
-#     The timeline is the artifact we could not produce for tc-04 — if
-#     enforcement diverges again, the moment and the ratio are both recorded.
-#     NOTE the ledger is asynchronous (see the v0.7 poll below), so the kill
-#     LAGS and will overshoot kill_usd by whatever the lag costs. Set kill_usd
-#     below the number you actually cannot exceed.
+# waterline sandbox runner v0.12 — mint → inject → exec → harvest → destroy
+# New in v0.12 — the result record stops lying. Every change here is HARVEST-TIME
+# only: nothing the agent sees or does is altered, so a run under v0.12 is still
+# comparable to one under v0.11.
+#   Four fields in the v0.11 record read as authoritative and were not. Each is the
+#   silent-success shape the failure log keeps catching — a confident wrong answer
+#   where an error or an honest blank was warranted — sitting inside the very record
+#   used to judge runs.
+#   - turns_from_stream: counts "type":"assistant" lines in the stream. num_turns is
+#     KEPT alongside it, deliberately, so the CLI bug stays visible instead of being
+#     quietly papered over. On target-tc-05 num_turns reported 1 for a 2493-second
+#     run whose stream holds 70 assistant messages. It was also 1 on an earlier
+#     20-minute run and correct (3) on a short one, so it breaks on long runs.
+#   - denials_from_stream: counts "denied by your permission settings" in the stream.
+#     The agent report's permission_denials came back [] on target-tc-04 while four
+#     denials sat in that run's stream. The stream is the artifact; the report is not.
+#   - trust_warning_absent: renamed from settings_loaded. No logic change. The value
+#     is computed by grepping stderr for the trust warning, so it has only ever meant
+#     "no warning found" — on a fast failure with empty stderr it reports true, which
+#     is not the same claim as "settings confirmed loaded".
+#   - costUSD_cli_estimate: renamed inside model_usage. The CLI cannot price a gateway
+#     alias like "execute", so it applies a fallback table — verified by reconstruction
+#     on two runs at $5/M in, $25/M out, 0.1x cache read, 1.25x cache write, applied
+#     IDENTICALLY to execute and to claude-opus-4-8, which is the giveaway. Its error
+#     grows with cache-creation volume: 1.10x wrong on tc-04, 1.90x on tc-05.
+#     spend_usd is the gateway ledger and is the real number — it matched the Console
+#     credit delta exactly on both runs. The token counts in model_usage are real and
+#     are retained; only the cost figure was renamed.
+#   - gate_firings: counts lines in keel-gate.log. On target-tc-05 the gate fired
+#     TWICE (07:37:37 and 07:54:19) and the record said nothing, so the fact that the
+#     agent tried to stop, was let go, and then worked for another seventeen minutes
+#     was invisible until the log was read by hand.
+# v0.11 (retained):
+#   - LEDGER KILL POLLER. A background loop samples /key/info every 30s, appends
+#     {ts, spend} to gateway-spend-timeline.jsonl, and tears the container down if the
+#     LEDGER spend crosses caps.kill_usd.
+#     Why: target-tc-04 died on "429 Budget has been exceeded! Current cost: 5.0,
+#     Max budget: 5.0" while its own result record said spend_usd 2.448. /spend/logs
+#     later agreed with 2.448 to nine decimal places, as did the Console delta.
+#     Nothing in the ledger ever reached 5.0, so the gateway's ENFORCEMENT counter and
+#     its LEDGER are two different numbers and only the ledger has ever been right.
+#     NOTE the ledger is asynchronous, so the kill LAGS and will overshoot kill_usd by
+#     whatever the lag costs. Set kill_usd below the number you cannot exceed, and set
+#     caps.budget_usd — the gateway's own cap, and the unreliable one — above it, so
+#     the broken counter is not what stops the run.
 #     caps.kill_usd absent or 0 disables the kill; the timeline is still written.
-#   - Gateway spend audit. The /key/info response is now SAVED rather than
-#     scraped and discarded (gateway-key-info.json), and the per-request ledger
-#     rows are captured alongside it (gateway-spend-logs.json), both while the
-#     virtual key still exists. Responses are written RAW, with no jq in the
-#     pipe: a 404 or a schema change lands in the file where it can be read,
-#     instead of being swallowed into a null.
-#   - Verified revocation. The key/delete response is captured, and the key is
-#     then RE-QUERIED to confirm it no longer resolves. Result: key_revoked.
-#     Why: the old line ended in `>/dev/null 2>&1 || true` — output discarded,
-#     exit code forced to zero. A failed revocation printed the same success
-#     message as a good one and left a budget-capped key live for its full
-#     hour. Same shape as settings_loaded: turn a silent step into a field that
-#     is always read. Verified by OUTCOME, not by trusting the response body.
-#   - Destroy runs BEFORE the result record is built, so key_revoked can be
-#     recorded in it. Spend capture still happens before destroy.
-#   - New result fields: kill_usd, killed_by_poller, key_revoked,
-#     key_info_path, spend_logs_path, timeline_path. New status: killed_budget.
-# v0.10 (retained):
-#   - Turn-stream capture. The agent runs with --output-format stream-json
-#     --verbose, writing one JSON object per line to /workspace/out/
-#     claude-stream.jsonl: every tool call with its arguments, every result,
-#     and a leading system/init line listing the tools available at launch.
-#     The summary record we have always harvested is the LAST line of that
-#     stream, so claude-output.json is derived from it and every downstream
-#     parse is unchanged.
-#     Derivation is deliberately NOT `tail -1`. On a run killed by the host
-#     timeout the CLI never writes its result line, and tail would grab a
-#     mid-stream object that is valid JSON and parses to nulls — a silent
-#     wrong answer where today we get a caught failure.
-#   - stream_path in the result record.
-# v0.9 (retained):
-#   - Trust preflight: asserts the image marks /workspace/repo as trusted
-#     before spending anything. Without trust Claude Code silently ignores the
-#     repo's .claude/settings.json — which disabled Keel in every run up to
-#     22 Jul (failure-log #13).
-#   - settings_loaded in the result record. NOTE the field is computed by
-#     absence of a warning, so it means "no warning found", not "settings
-#     confirmed loaded" — on a fast failure with empty stderr it reports true.
-# v0.8 (retained): image is a task-spec field and is recorded in the result.
-# v0.7 (retained): num_turns lifted into the result record; spend query
-#   hardened against the async gateway ledger.
+#   - Gateway spend audit: the /key/info response is SAVED rather than scraped and
+#     discarded (gateway-key-info.json), and the per-request ledger rows are captured
+#     alongside it (gateway-spend-logs.json), both while the virtual key still exists.
+#     Written RAW, no jq in the pipe, so a 404 or schema change lands in the file
+#     where it can be read instead of being swallowed into a null.
+#   - Verified revocation: the key/delete response is captured and the key is then
+#     RE-QUERIED to confirm it no longer resolves. Result: key_revoked. The old line
+#     ended in `>/dev/null 2>&1 || true` — a failed revocation printed the same
+#     success message as a good one and left a budget-capped key live for its full
+#     hour. Verified by OUTCOME, not by trusting the response body.
+#   - Destroy runs BEFORE the result record is built so key_revoked can be recorded.
+# v0.10 (retained): turn-stream capture. The agent runs with --output-format
+#   stream-json --verbose to claude-stream.jsonl. claude-output.json is derived from
+#   the LAST "type":"result" line, deliberately NOT `tail -1` — on a run killed by the
+#   host timeout the CLI never writes its result line, and tail would grab a
+#   mid-stream object that is valid JSON and parses to nulls.
+# v0.9 (retained): trust preflight (failure-log #13) and the stderr trust check.
+# v0.8 (retained): image is a task-spec field and is recorded.
+# v0.7 (retained): num_turns lifted from the report; spend query hardened against the
+#   async gateway ledger.
 # v0.6 (retained): modelUsage lifted into model + model_usage.
 # v0.5 (retained): task-spec "env" injected as container environment variables.
-# v0.4 (retained): out-mount for report; unmounted venv/caches; harvest
-#   excludes; "mount":"ro"|"rw"; result record with report_path + summary.
+# v0.4 (retained): out-mount for report; unmounted venv/caches; harvest excludes;
+#   "mount":"ro"|"rw"; result record with report_path + summary.
 # Usage: sandbox-run.sh <task-spec.json>
 set -euo pipefail
 export GIT_TERMINAL_PROMPT=0
@@ -198,6 +204,23 @@ else
   echo "[$TASK_ID] WARNING: no turn stream was written" >&2
 fi
 
+# v0.12: counts taken from the STREAM, which is the artifact, rather than from the
+# agent's own report, which has been wrong on both of these.
+TURNS_FROM_STREAM=0
+DENIALS_FROM_STREAM=0
+if [ -f "$STREAM_PATH" ]; then
+  TURNS_FROM_STREAM=$(grep -c '"type":"assistant"' "$STREAM_PATH" 2>/dev/null || echo 0)
+  DENIALS_FROM_STREAM=$(grep -c "denied by your permission settings" "$STREAM_PATH" 2>/dev/null || echo 0)
+fi
+
+# v0.12: the gate audits every firing to this log. Counting the lines shows whether
+# the agent tried to stop more than once.
+GATE_LOG="$OUT/keel-gate.log"
+GATE_FIRINGS=0
+if [ -f "$GATE_LOG" ]; then
+  GATE_FIRINGS=$(grep -c . "$GATE_LOG" 2>/dev/null || echo 0)
+fi
+
 DIFF_FILE="$WORK/changes.diff"
 git config --global --add safe.directory "$WORK/repo" >/dev/null 2>&1 || true
 # safety-net excludes: junk that should have died with the container
@@ -220,6 +243,9 @@ git -C "$WORK/repo" diff --cached "$BASE_SHA" > "$DIFF_FILE" || true
 CHANGED=$(git -C "$WORK/repo" diff --cached --name-only "$BASE_SHA" | wc -l | tr -d ' ')
 
 # agent report: path + short summary
+# v0.12: costUSD inside model_usage is renamed to costUSD_cli_estimate. The CLI
+# cannot price a gateway alias, so that figure is a fallback-table guess; spend_usd
+# is the ledger and is the real number. Token counts are kept as-is — they are real.
 SUMMARY=""
 MODEL="unknown"
 MODEL_USAGE="{}"
@@ -227,14 +253,16 @@ NUM_TURNS=0
 if [ -s "$REPORT_PATH" ]; then
   SUMMARY=$(jq -r '.result // empty' "$REPORT_PATH" 2>/dev/null | head -c 200 || true)
   MODEL=$(jq -r '.modelUsage | keys[0] // "unknown"' "$REPORT_PATH" 2>/dev/null || echo unknown)
-  MODEL_USAGE=$(jq -c '.modelUsage // {}' "$REPORT_PATH" 2>/dev/null || echo '{}')
+  MODEL_USAGE=$(jq -c '.modelUsage // {} | with_entries(.value |= (if type == "object" and has("costUSD") then (. + {costUSD_cli_estimate: .costUSD} | del(.costUSD)) else . end))' "$REPORT_PATH" 2>/dev/null || echo '{}')
+  [ -z "$MODEL_USAGE" ] && MODEL_USAGE='{}'
   NUM_TURNS=$(jq -r '.num_turns // 0' "$REPORT_PATH" 2>/dev/null || echo 0)
 fi
 
-# v0.9: did Claude Code actually load the repo's settings this run?
-SETTINGS_LOADED=true
+# v0.9 logic, v0.12 name: this greps stderr for the trust warning, so it means
+# "no warning found", NOT "settings confirmed loaded". Renamed to say so.
+TRUST_WARNING_ABSENT=true
 if grep -q "has not been trusted" "$OUT/claude-stderr.log" 2>/dev/null; then
-  SETTINGS_LOADED=false
+  TRUST_WARNING_ABSENT=false
   echo "[$TASK_ID] WARNING: repo settings were IGNORED (workspace not trusted)" >&2
 fi
 
@@ -254,7 +282,6 @@ for _try in 1 2 3 4; do
 done
 
 # v0.11: per-request ledger rows, captured while the key still exists.
-# This is the artifact that would have made target-tc-04's 429 answerable.
 curl -s -X GET "$GATEWAY_URL/spend/logs?api_key=$VKEY" \
   -H "Authorization: Bearer $GATEWAY_MASTER_KEY" > "$SPEND_LOGS_PATH" 2>/dev/null || true
 if [ ! -s "$SPEND_LOGS_PATH" ]; then
@@ -270,8 +297,7 @@ curl -s -X POST "$GATEWAY_URL/key/delete" \
   -d "{\"keys\":[\"$VKEY\"]}" > "$DELETE_PATH" 2>/dev/null || true
 
 # Verify by OUTCOME, not by trusting the delete response body: a revoked key
-# no longer resolves. If it still does, say so loudly — a live budget-capped
-# key with an hour left is exactly what the key model exists to prevent.
+# no longer resolves.
 KEY_REVOKED=true
 if curl -s -X GET "$GATEWAY_URL/key/info?key=$VKEY" \
      -H "Authorization: Bearer $GATEWAY_MASTER_KEY" 2>/dev/null \
@@ -299,10 +325,13 @@ jq -n \
   --argjson killed_by_poller "$KILLED_BY_POLLER" \
   --arg mount "$MOUNT_MODE" \
   --arg image "$IMAGE" \
-  --argjson settings_loaded "$SETTINGS_LOADED" \
+  --argjson trust_warning_absent "$TRUST_WARNING_ABSENT" \
   --argjson key_revoked "$KEY_REVOKED" \
   --arg model "$MODEL" \
   --arg num_turns "$NUM_TURNS" \
+  --arg turns_from_stream "$TURNS_FROM_STREAM" \
+  --arg denials_from_stream "$DENIALS_FROM_STREAM" \
+  --arg gate_firings "$GATE_FIRINGS" \
   --argjson model_usage "$MODEL_USAGE" \
   --arg diff_path "$DIFF_FILE" \
   --arg report_path "$REPORT_PATH" \
@@ -317,9 +346,12 @@ jq -n \
     changed_files:($changed_files|tonumber),
     spend_usd:($spend|tonumber), budget_usd:($budget|tonumber),
     kill_usd:($kill_usd|tonumber), killed_by_poller:$killed_by_poller,
-    mount:$mount, image:$image, settings_loaded:$settings_loaded,
+    mount:$mount, image:$image, trust_warning_absent:$trust_warning_absent,
     key_revoked:$key_revoked, model:$model, model_usage:$model_usage,
     num_turns:($num_turns|tonumber),
+    turns_from_stream:($turns_from_stream|tonumber),
+    denials_from_stream:($denials_from_stream|tonumber),
+    gate_firings:($gate_firings|tonumber),
     diff_path:$diff_path,
     report_path:$report_path, stream_path:$stream_path,
     key_info_path:$key_info_path, spend_logs_path:$spend_logs_path,

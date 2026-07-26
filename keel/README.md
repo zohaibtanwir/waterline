@@ -1,4 +1,4 @@
-# Keel v0.2
+# Keel v0.3
 
 The base layer of an agentic engineering harness. Versioned, shipped into a
 target repo, and not edited there.

@@ -1,4 +1,4 @@
-<!-- KEEL v0.1.2 — managed file. Do not edit here.
+<!-- KEEL v0.3 — managed file. Do not edit here.
      Repo-specific rules go in the "## This repo" section of CLAUDE.md.
      Direct edits are overwritten on the next Keel upgrade. -->
 
@@ -7,6 +7,13 @@
 ## Done means verified
 A task is done when the tests pass, not when you say it is. If you cannot run
 the tests, the task is not done — say so and stop.
+
+Run the test command once, in the foreground, when you believe you are
+finished. Do not run it in the background: a background result arrives after
+you have moved on and pulls you back into work you had already completed. Once
+a suite has passed, do not run it again to gain confidence. The Stop gate runs
+the same command itself before your work is accepted, so a second and third
+pass change nothing about the outcome and cost a full context read each time.
 
 The diff is the deliverable. A fix that exists only outside the repository
 working tree — in the environment, the virtualenv, or any path that does not
