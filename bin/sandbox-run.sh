@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
-# waterline sandbox runner v0.12 — mint → inject → exec → harvest → destroy
+# waterline sandbox runner v0.12.1 — mint → inject → exec → harvest → destroy
+# v0.12.1 FIXES A BUG SHIPPED IN v0.12, found before it ran.
+#   The three new counters were guarded with `|| echo 0`. `grep -c` prints its
+#   count AND exits 1 when the count is zero, so on a zero count the command
+#   substitution captured grep's "0" and then echo's "0" — two lines. jq's
+#   tonumber then fails on "0\n0", jq exits non-zero, and under `set -euo
+#   pipefail` the script dies BEFORE writing the result record. Destroy has
+#   already run by that point, so the run would have completed, spent its money,
+#   and produced no result record at all.
+#   It would have fired on the SUCCESS case specifically: denials_from_stream is
+#   zero whenever the deny rules do not trigger, which is every run since Keel
+#   v0.2. Guards are now `|| true` (which emits nothing) plus an empty check.
+#
 # New in v0.12 — the result record stops lying. Every change here is HARVEST-TIME
 # only: nothing the agent sees or does is altered, so a run under v0.12 is still
 # comparable to one under v0.11.
@@ -209,17 +221,20 @@ fi
 TURNS_FROM_STREAM=0
 DENIALS_FROM_STREAM=0
 if [ -f "$STREAM_PATH" ]; then
-  TURNS_FROM_STREAM=$(grep -c '"type":"assistant"' "$STREAM_PATH" 2>/dev/null || echo 0)
-  DENIALS_FROM_STREAM=$(grep -c "denied by your permission settings" "$STREAM_PATH" 2>/dev/null || echo 0)
+  TURNS_FROM_STREAM=$(grep -c '"type":"assistant"' "$STREAM_PATH" 2>/dev/null || true)
+  DENIALS_FROM_STREAM=$(grep -c "denied by your permission settings" "$STREAM_PATH" 2>/dev/null || true)
 fi
+[ -z "$TURNS_FROM_STREAM" ] && TURNS_FROM_STREAM=0
+[ -z "$DENIALS_FROM_STREAM" ] && DENIALS_FROM_STREAM=0
 
 # v0.12: the gate audits every firing to this log. Counting the lines shows whether
 # the agent tried to stop more than once.
 GATE_LOG="$OUT/keel-gate.log"
 GATE_FIRINGS=0
 if [ -f "$GATE_LOG" ]; then
-  GATE_FIRINGS=$(grep -c . "$GATE_LOG" 2>/dev/null || echo 0)
+  GATE_FIRINGS=$(grep -c . "$GATE_LOG" 2>/dev/null || true)
 fi
+[ -z "$GATE_FIRINGS" ] && GATE_FIRINGS=0
 
 DIFF_FILE="$WORK/changes.diff"
 git config --global --add safe.directory "$WORK/repo" >/dev/null 2>&1 || true

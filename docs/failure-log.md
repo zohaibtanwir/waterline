@@ -17,27 +17,42 @@ substrate inherits.
 | 9 | 17 Jul | deploy (gateway) | tinyproxy filter sed with \\. escapes did not match; api.anthropic.com line survived first removal attempt | ops (regex escaping) | Simpler literal sed '/anthropic/d'; verified grep -c = 0 (verify, don't assume) | tinyproxy-filter |
 | 10 | 19 Jul | placement (Keel v0.1) | Command block assumed repo at ~/waterline; real clone is ~/projects/waterline. mkdir -p created the stray tree instead of failing, so five files landed in a directory that looked correct from the shell. Surfaced six exchanges later via "not a git repository". Compounded: a partial keel/ already existed in the real repo, so the corrective mv nested it as keel/keel/ | process (unverified assumption) | Flattened nesting, moved into real repo, removed stray, committed. Protocol amendment: command blocks that write to a path must use a path confirmed in-session, or open with a step that fails loudly. Do not infer repo locations | this log; working protocol |
 | 11 | 20 Jul | deploy (Keel v0.1.1 upgrade) | Pasted command block died at a `quote>` prompt: an apostrophe in a comment label line opened an unterminated zsh string and swallowed every following line; separately, pasted `#` labels error as commands because interactive_comments is off in this zsh | ops (shell quoting) | Ctrl+C, re-ran block with ASCII-clean label; protocol: label lines carry no apostrophes or parentheses; optional permanent fix `setopt interactive_comments` | working protocol |
-| 12 | 20 Jul | config (Keel settings) | `Write(/**)` deny — intended as "deny all absolute-path writes" — was an invalid pattern that Claude Code SILENTLY IGNORED: no error, no warning, no protection, for five runs. Surfaced only because probe target-keel-05 ordered the agent to attempt the forbidden write and it succeeded. Compounding: silence also fit "flag bypasses denies", a wrong diagnosis that stood for half a day | config (silent-ignore of invalid rule) | Corrected to `//**` (absolute form). Verified by three probes: interactive Write denied with no prompt; sandbox Write denied; sandbox Bash redirect to the denied path also denied and recorded in permission_denials. Rule going forward: a deny is not deployed until a probe has watched it refuse | keel/settings.json v0.1.2; README v0.1.3 two-walls; this log |
-| 13 | 22 Jul | verification (L3 evidence base) | Claude Code ignored `.claude/settings.json` in EVERY sandbox run to date — `"Ignoring 10 permissions.allow entries from .claude/settings.json: this workspace has not been trusted"` sat in the stderr of all seven runs, unread after run 02. Keel's allow-list, deny-list and hook registration therefore did nothing. Probe target-keel-06's refusals — published as proof that Keel's denies bind headlessly — actually came from the image's `managed-settings.json`, which needs no trust. Surfaced only when the first L4 run (target-tc-01) failed and its stderr was read line by line | process (verified the outcome, not the mechanism) | Documents corrected before any new run: architecture.md L3 section re-marked claim-by-claim with evidence, exit gate 2 restated as NOT MET AS STATED, Keel README to v0.1.4. Image fix pending: set `hasTrustDialogAccepted` for the workspace path in the agent's `.claude.json` so repo-level settings load at all; then re-probe Keel's own denies and the gate's registration path | docs/architecture.md; keel/README.md v0.1.4; this log |
+| 12 | 20 Jul | config (Keel settings) | `Write(/**)` deny — intended as "deny all absolute-path writes" — was an invalid pattern that Claude Code SILENTLY IGNORED: no error, no warning, no protection, for five runs. Surfaced only because probe target-keel-05 ordered the agent to attempt the forbidden write and it succeeded. Compounding: silence also fit "flag bypasses denies", a wrong diagnosis that stood for half a day | config (silent-ignore of invalid rule) | Corrected to `//**` (absolute form). **Verification claim revised 26 Jul.** The interactive Door-1 probe stands. The two sandbox probes do NOT — see #13 for the attribution error (those refusals came from the image's managed-settings.json, not from Keel) and #14 for the field (permission_denials returns empty while denials sit in the stream). What Keel's deny actually does was settled later, on target-tc-04's stream: it blocks the Edit and Write tools and nothing else, and the agent routed around it with `cat >` and then `python3` to the identical path, in the same turn, twice. Rule going forward unchanged, with an addition: a deny is not deployed until a probe has watched it refuse — and the probe must watch the RIGHT LAYER refuse | keel/settings.json v0.1.2; README v0.1.3 two-walls; this log |
+| 13 | 22 Jul | verification (L3 evidence base) | Claude Code ignored `.claude/settings.json` in EVERY sandbox run to date — `"Ignoring 10 permissions.allow entries from .claude/settings.json: this workspace has not been trusted"` sat in the stderr of all seven runs, unread after run 02. Keel's allow-list, deny-list and hook registration therefore did nothing. Probe target-keel-06's refusals — published as proof that Keel's denies bind headlessly — actually came from the image's `managed-settings.json`, which needs no trust. Surfaced only when the first L4 run (target-tc-01) failed and its stderr was read line by line | process (verified the outcome, not the mechanism) | Documents corrected before any new run: architecture.md L3 section re-marked claim-by-claim with evidence, exit gate 2 restated as NOT MET AS STATED, Keel README to v0.1.4. Image fix pending: set `hasTrustDialogAccepted` for the workspace path in the agent's `.claude.json` so repo-level settings load at all; then re-probe Keel's own denies and the gate's registration path. **Closed 26 Jul:** sandbox-base:v2 bakes the trust flag, and target-tc-05's keel-gate.log proves the Stop hook registers from Keel's own settings.json — the hook is declared nowhere else | docs/architecture.md; keel/README.md v0.1.4; images/sandbox-base v2; this log |
+| 14 | 24-26 Jul | harvest (the result record) | Four fields in the harness result record read as authoritative and were not. `permission_denials` returned `[]` on target-tc-04 while four "denied by your permission settings" results sat in that same run's stream. `num_turns` reported 1 for target-tc-05, a 2493-second run whose stream holds 70 assistant messages — it had also reported 1 for an earlier 20-minute run and 3 correctly for a short one, so it breaks on long runs specifically. `settings_loaded` is computed by grepping stderr for the trust warning, so it has only ever meant "no warning found"; on a fast failure with empty stderr it reports true. `model_usage.costUSD` is the CLI's fallback price table applied to gateway aliases it cannot resolve — verified by reconstruction on two runs at $5/M in, $25/M out, 0.1x cache read, 1.25x cache write, applied IDENTICALLY to `execute` and to `claude-opus-4-8`, which is the giveaway; it was wrong by 1.10x on tc-04 and 1.90x on tc-05 against the gateway ledger, and the ledger matched the Console credit delta exactly on both runs | verification (the record used to judge every run) | v0.12 takes both counts from the stream — `turns_from_stream`, `denials_from_stream` — renames `settings_loaded` to `trust_warning_absent` and `costUSD` to `costUSD_cli_estimate`, and adds `gate_firings` after tc-05's gate fired twice with the record silent about it. `num_turns` is retained alongside `turns_from_stream` deliberately, so the CLI bug stays visible rather than being quietly papered over | bin/sandbox-run.sh v0.12; this log |
+| 15 | 26 Jul | exec (agent behaviour) | target-tc-05 spent about 31% of its budget after both suites were already green and the Stop gate had already passed. Arithmetic from three artifacts: `keel-gate.log` gives the first pass at 07:37:37Z; `gateway-spend-timeline.jsonl` reads 3.683296 at 07:37:47; final `spend_usd` was 5.371443; the difference is $1.688147 of $5.371443. Mechanism, from the agent's own messages in the stream: it ran the suites as BACKGROUND tasks, and their completions woke it back up after it had finished, whereupon it re-confirmed the same green result — "The second agents-suite run also completed with exit code 0", then "All three independent runs confirmed. Nothing further to act on." `keel-gate.log` carries two firings, 07:37:37 and 07:54:19, seventeen minutes apart | loop (agent never converges on done) — the FIRST agent-behaviour entry in this log; 1-14 are all infra/script/config/ops/process/verification | Keel v0.3 adds to CONVENTIONS.md: run the test command once, in the foreground; do not run it in the background, because a background result arrives after you have moved on and pulls you back into work you had already completed; once a suite has passed do not run it again for confidence, because the Stop gate runs the same command itself before the work is accepted. EFFECT UNMEASURED — target-tc-06 is the A/B that tests it | keel/CONVENTIONS.md v0.3; this log |
 
 ---
 
 Diagnosis discipline (from the harness article): name the layer first —
 harness/infra failures (permissions, network, credentials, config) vs loop
-failures (agent never converges, verification passes garbage). Entries 1–12
-are all infra/script/config/ops/process layer; no agent-behavior failures yet.
+failures (agent never converges, verification passes garbage). Entries 1–14 are
+infra, script, config, ops, process and verification layer. Entry 15 is the
+first loop-layer failure recorded here — an agent that reached a correct,
+gated, verified result and then spent a third of the run failing to believe it.
+Worth naming what it is not: not a wrong answer, not a weakened test, not a
+fake done. Every check the harness makes passed. The waste was invisible to all
+of them, and surfaced only because the spend timeline and the gate log could be
+read against each other.
 
-Recurring shape — **silent success where an error was warranted.** Seven
+Recurring shape — **silent success where an error was warranted.** Eight
 instances: an untrusted settings file ignored with a warning nobody read, for
 seven consecutive runs (13); an invalid deny pattern silently discarded while
-appearing to protect (12); `mkdir -p` fabricating a wrong path rather than
-failing (10); a direct edit to a managed Keel file overwritten with no warning
-on upgrade (SSOT drift, docs/deferred.md); an unset KEEL_TEST_CMD disabling the
-done-means-verified gate while merely nagging (require-green.sh); an npm
-install whose postinstall never ran, leaving a stub that failed weeks later;
-and corepack resolving a pinned pnpm version forward while the build stayed
-green (fixed same day by asserting versions instead of printing them). Entry 3
-is the inverse — a loud failure on a correct state.
+appearing to protect (12); `permission_denials` reporting an empty list while
+four denials sat in the same run's stream (14); `mkdir -p` fabricating a wrong
+path rather than failing (10); a direct edit to a managed Keel file overwritten
+with no warning on upgrade (SSOT drift, docs/deferred.md); an unset
+KEEL_TEST_CMD disabling the done-means-verified gate while merely nagging
+(require-green.sh); an npm install whose postinstall never ran, leaving a stub
+that failed weeks later; and corepack resolving a pinned pnpm version forward
+while the build stayed green (fixed same day by asserting versions instead of
+printing them). Entry 3 is the inverse — a loud failure on a correct state.
+
+Entry 14 is worth reading as three more of the same shape if you want the count
+higher: `num_turns` returning 1, `settings_loaded` meaning something narrower
+than it says, and `costUSD` presenting a guess in the same shape as a fact. They
+are counted here as one entry because they were found and fixed together, but
+each is independently the pattern.
 
 Entry 13 adds a second rule to the first. The original: when a step encodes an
 assumption, make its violation noisy; a protection you have only read is a
@@ -48,3 +63,10 @@ a passing probe identifies only that *some* layer held. Name the layer, or the
 claim is unearned. Every "verified" in this substrate's documents should carry
 the artifact that proves it; where it cannot, the word is "unverified" and that
 is an acceptable thing for a document to say.
+
+Entry 15 adds a third. The first two are about not trusting a control you have
+not watched work. This one is about the opposite failure: a control that DID
+work, whose result was not trusted. The gate passed, and the agent kept
+re-verifying anyway. A harness that only catches under-verification will not
+see over-verification at all — it costs budget, produces no signal, and every
+check reports success while it happens.
